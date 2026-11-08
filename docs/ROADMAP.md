@@ -1367,6 +1367,11 @@ Owner: open · Status: in progress
 - [x] Accept binary plist arrays and sets that name one stored value many times; repeated data and
       text spend a byte budget, and containers past the node cap are refused before reserving space.
       — claimed: Plastic-time, branch bugfix/r3.12-plist-shared-array-values
+- [ ] SQLite rows keep each value on its own column when a table has VIRTUAL generated columns:
+      SQLite computes those when a row is read and stores no field for them, so they show as not
+      read (with a note) instead of shifting later values onto the wrong columns, in rowid and
+      WITHOUT ROWID tables alike.
+      — claimed: Chr0mium24, branch bugfix/r3.12-sqlite-virtual-generated-columns
 
 ### R3.13 Web inspection correctness
 Owner: open · Status: in progress
