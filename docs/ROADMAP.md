@@ -1565,7 +1565,7 @@ Owner: open · Status: in progress
       isn't read: the key format lists `placeholder` and a Display P3 variant's key shows
       `placeholder: 1` instead of `display-gamut: 1`.
       — claimed: Chr0mium24, branch bugfix/r3.12-car-key-format-workaround
-- [ ] Name the glyph weight (26) and glyph size (27) key attributes of asset catalogs, which hold
+- [x] Name the glyph weight (26) and glyph size (27) key attributes of asset catalogs, which hold
       SF Symbol style images; they're listed as `attribute-26` and `attribute-27` today.
       — claimed: Chr0mium24, branch bugfix/r3.12-car-glyph-attributes
 
