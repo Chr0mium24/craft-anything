@@ -1299,6 +1299,7 @@ Owner: open · Status: in progress
       (`DEFAULT 0x10`, `DEFAULT (5)`); they show NULL with a note today.
 - [ ] Give filled-in SQLite defaults their column's affinity: `t TEXT DEFAULT 5` reads '5' in
       SQLite and 5 here. (A REAL column's default already reads as a REAL.)
+      — claimed: Chr0mium24, branch bugfix/r3.12-sqlite-default-affinity
 - [x] Whole numbers in SQLite REAL columns read as REAL: SQLite stores a REAL with no fractional
       part as an integer and turns it back into a REAL when it reads the column, so a REAL, FLOAT
       or DOUBLE column holding 1.0 shows 1.0 instead of 1.
