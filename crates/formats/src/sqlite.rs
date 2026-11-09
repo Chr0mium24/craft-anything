@@ -1293,8 +1293,7 @@ fn literal_default(tokens: &[&str], affinity: Affinity) -> Option<CellValue> {
         return Some(CellValue::Null);
     }
     if token.eq_ignore_ascii_case("TRUE") || token.eq_ignore_ascii_case("FALSE") {
-        let value = i64::from(token.eq_ignore_ascii_case("TRUE"));
-        return Some(if affinity == Affinity::Text { text_value(value.to_string().as_bytes()) } else { CellValue::Int(value) });
+        return Some(integer_default(i64::from(token.eq_ignore_ascii_case("TRUE")), affinity));
     }
     if token.starts_with('\'') && token.ends_with('\'') && token.len() >= 2 {
         let text = token.get(1..token.len().checked_sub(1)?)?.replace("''", "'");
@@ -1334,24 +1333,18 @@ fn literal_default(tokens: &[&str], affinity: Affinity) -> Option<CellValue> {
     } else {
         token.to_owned()
     };
+    let integer = number_kind(&number)?;
     let (minus, unsigned) = match number.strip_prefix('-') {
         Some(unsigned) => (true, unsigned),
         None => (false, number.strip_prefix('+').unwrap_or(&number)),
     };
-    let integer = number_shape(unsigned)?;
     match affinity {
         // An integer that fits in 64 bits is written plainly (`007` reads '7'); any other number
         // is written as it is in the schema, keeping a minus sign but not a plus.
-        Affinity::Text => {
-            let text = match unsigned.parse::<i64>() {
-                Ok(n) if integer => {
-                    let n = if minus { n.saturating_neg() } else { n };
-                    n.to_string()
-                }
-                _ => format!("{}{unsigned}", if minus { "-" } else { "" }),
-            };
-            Some(text_value(text.as_bytes()))
-        }
+        Affinity::Text => Some(match unsigned.parse::<i64>() {
+            Ok(n) if integer => integer_default(if minus { n.saturating_neg() } else { n }, affinity),
+            _ => text_value(format!("{}{unsigned}", if minus { "-" } else { "" }).as_bytes()),
+        }),
         Affinity::Numeric | Affinity::Real => numeric_value(&number).and_then(finite),
         Affinity::Blob => match number.parse::<i64>() {
             Ok(n) if integer => Some(CellValue::Int(n)),
@@ -1360,34 +1353,17 @@ fn literal_default(tokens: &[&str], affinity: Affinity) -> Option<CellValue> {
     }
 }
 
-/// Whether `text` is an unsigned number as SQL writes one: `Some(true)` for an integer (`007`),
-/// `Some(false)` for a real (`1.5`, `.5`, `5.`, `1e3`), `None` for anything else.
-fn number_shape(text: &str) -> Option<bool> {
-    fn skip_digits(s: &str) -> &str {
-        s.trim_start_matches(|c: char| c.is_ascii_digit())
-    }
-    let after_whole = skip_digits(text);
-    let mut has_digit = after_whole.len() < text.len();
-    let (point, rest) = match after_whole.strip_prefix('.') {
-        Some(fraction) => {
-            let rest = skip_digits(fraction);
-            has_digit |= rest.len() < fraction.len();
-            (true, rest)
-        }
-        None => (false, after_whole),
-    };
-    let exponent = match rest.strip_prefix(['e', 'E']) {
-        Some(power) => {
-            let power = power.strip_prefix(['+', '-']).unwrap_or(power);
-            if power.is_empty() || !skip_digits(power).is_empty() {
-                return None;
-            }
-            true
-        }
-        None if rest.is_empty() => false,
-        None => return None,
-    };
-    has_digit.then_some(!point && !exponent)
+/// An integer literal as a column of this affinity reads it: a TEXT column reads it as text.
+fn integer_default(n: i64, affinity: Affinity) -> CellValue {
+    if affinity == Affinity::Text { text_value(n.to_string().as_bytes()) } else { CellValue::Int(n) }
+}
+
+/// Whether `text` is a number as SQL writes one, sign included: `Some(true)` for an integer
+/// (`-007`), `Some(false)` for a real (`1.5`, `.5`, `5.`, `1e3`), `None` for anything else.
+/// Rust's float syntax is SQL's once the letters of `inf` and `nan` are ruled out.
+fn number_kind(text: &str) -> Option<bool> {
+    let numeric = text.bytes().all(|b| b.is_ascii_digit() || matches!(b, b'+' | b'-' | b'.' | b'e' | b'E'));
+    (numeric && text.parse::<f64>().is_ok()).then(|| !text.contains(['.', 'e', 'E']))
 }
 
 /// What a NUMERIC or REAL column makes of text that is a number, spaces around it allowed: an
@@ -1395,7 +1371,7 @@ fn number_shape(text: &str) -> Option<bool> {
 /// a number, so it stays text.
 fn numeric_value(text: &str) -> Option<CellValue> {
     let number = text.trim_matches([' ', '\t', '\n', '\u{b}', '\u{c}', '\r']);
-    let integer = number_shape(number.strip_prefix(['+', '-']).unwrap_or(number))?;
+    let integer = number_kind(number)?;
     if integer && let Ok(n) = number.parse::<i64>() {
         return Some(CellValue::Int(n));
     }
