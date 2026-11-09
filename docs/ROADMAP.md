@@ -1469,6 +1469,7 @@ Owner: open · Status: in progress
       — claimed: Plastic-time, branch bugfix/r3.12-sqlite-parenthesized-table-names
 - [ ] A comment after a SQLite column list that holds `)` (`... WITHOUT ROWID /* ) */`) still hides
       the WITHOUT ROWID marker: find the list's closing parenthesis by tokens, not `rfind(')')`.
+      — claimed: Chr0mium24, branch bugfix/r3.12-sqlite-options-after-comment
 
 - [x] Keep Android binary XML events within their document, chunk and attribute bounds.
       — claimed: Afloat16, branch bugfix/r3.12-android-xml-events
