@@ -1558,7 +1558,7 @@ Owner: open · Status: in progress
       isn't read: the key format lists `placeholder` and a Display P3 variant's key shows
       `placeholder: 1` instead of `display-gamut: 1`.
       — claimed: Chr0mium24, branch bugfix/r3.12-car-key-format-workaround
-- [ ] Swift symbols name the right type after an optional, an associated type or an extension.
+- [x] Swift symbols name the right type after an optional, an associated type or an extension.
       The demangler's substitution list left out `Sg` optionals and `Qz`/`Qy` associated types
       and added extensions, so a later `A…` reference named the wrong node
       (`[Swift.String : Swift.String]` where the symbol says `Swift.String?`) or fell out of range.
