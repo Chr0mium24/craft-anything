@@ -1513,7 +1513,7 @@ Owner: open · Status: in progress
 - [x] Name DriverKit and visionOS simulator Mach-O binaries in the binary view: its platform table
       stopped at 9 and 11, so a `.dext` read "unknown" while the dependency view said "driverkit".
       — claimed: Chr0mium24, branch bugfix/r3.12-macho-platform-names
-- [ ] Swift symbols with a protocol type decode. In a protocol list (`…_p`) each protocol is a
+- [x] Swift symbols with a protocol type decode. In a protocol list (`…_p`) each protocol is a
       context and a name with no `P` kind letter, but the demangler expected a type there, so an
       existential of a protocol named this way was reported invalid ("expected a type"):
       `_$sSS6encode2toys7Encoder_p_tKF` is `Swift.String.encode(to: Swift.Encoder) throws -> ()`.

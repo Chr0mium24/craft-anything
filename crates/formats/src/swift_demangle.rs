@@ -228,6 +228,16 @@ impl<'a> D<'a> {
         }
     }
 
+    /// One protocol of a protocol list (`…_p`): a context and a name, with no `P` kind letter and
+    /// no substitution slot of its own, or a type such as a standard protocol (`SH`).
+    fn pop_protocol(&mut self) -> R<N> {
+        if let Some(N::Ident(name)) = self.pop_if(|n| matches!(n, N::Ident(_))) {
+            let ctx = self.pop_context()?;
+            return Ok(N::Nominal { kind: 'P', ctx: Box::new(ctx), name });
+        }
+        self.pop_type()
+    }
+
     fn identifier(&mut self) -> R<N> {
         let mut has_words = false;
         let mut puny = false;
@@ -910,7 +920,7 @@ impl<'a> D<'a> {
                             return Err("too many protocols".into());
                         }
                         let first = self.pop_if(|n| matches!(n, N::FirstMarker)).is_some();
-                        protos.push(self.pop_type()?);
+                        protos.push(self.pop_protocol()?);
                         if first {
                             break;
                         }
