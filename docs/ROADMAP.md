@@ -1520,6 +1520,11 @@ Owner: open · Status: in progress
       existential of a protocol named this way was reported invalid ("expected a type"):
       `_$sSS6encode2toys7Encoder_p_tKF` is `Swift.String.encode(to: Swift.Encoder) throws -> ()`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-existentials
+- [ ] Swift enum case symbols decode. A symbol ending `WC` is the function that builds an enum
+      case, but the demangler read `WC` as an unknown witness kind and reported it invalid
+      ("unsupported witness kind"): `_$s10FindMyBase3BitO3oneyA2CmFWC` is
+      `enum case for FindMyBase.Bit.one(FindMyBase.Bit.Type) -> FindMyBase.Bit`.
+      — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-enum-cases
 - [x] Swift symbols name the right type after an optional, an associated type or an extension.
       The demangler's substitution list left out `Sg` optionals and `Qz`/`Qy` associated types
       and added extensions, so a later `A…` reference named the wrong node
