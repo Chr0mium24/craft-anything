@@ -1472,7 +1472,7 @@ Owner: open · Status: in progress
       read (with a note) instead of shifting later values onto the wrong columns, in rowid and
       WITHOUT ROWID tables alike.
       — claimed: Chr0mium24, branch bugfix/r3.12-sqlite-virtual-generated-columns
-- [ ] A SQLite CREATE TABLE longer than 4 KiB is read whole. The schema walk cut it at the 4 KiB
+- [x] A SQLite CREATE TABLE longer than 4 KiB is read whole. The schema walk cut it at the 4 KiB
       text cap, so the columns after the cut weren't listed, a rowid alias read NULL, a WITHOUT
       ROWID table showed no rows, and the defaults of columns added later weren't filled.
       — claimed: Chr0mium24, branch bugfix/r3.12-sqlite-long-create-table

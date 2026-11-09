@@ -29,6 +29,13 @@ const MAX_DEPTH: usize = 64;
 pub const MAX_ROWS: usize = 100_000;
 /// Most schema objects listed.
 const MAX_SCHEMA_OBJECTS: usize = 100_000;
+/// Longest schema text read whole (SQLite's own default limit on a statement is 1,000,000
+/// bytes). A CREATE statement is parsed whole, so the columns, rowid alias and `WITHOUT ROWID`
+/// after its first [`MAX_TEXT`] bytes still count; the statement shown is cut at [`MAX_TEXT`].
+const MAX_SCHEMA_TEXT: usize = 1 << 20;
+/// Schema text one walk keeps whole in all. Past it, schema text is cut at [`MAX_TEXT`] like other
+/// text, so schema rows that share an overflow chain can't multiply the file's size.
+const MAX_SCHEMA_TEXT_TOTAL: usize = 32 << 20;
 
 const MAGIC: &[u8; 16] = b"SQLite format 3\0";
 
@@ -82,7 +89,8 @@ pub struct SchemaObject {
     pub tbl_name: String,
     /// Root b-tree page (0 for views and triggers, which have no b-tree).
     pub rootpage: u32,
-    /// The original CREATE statement, truncated to a sane length.
+    /// The original CREATE statement, cut at 4 KiB for display; `columns` come from the whole
+    /// statement.
     pub sql: String,
     /// Columns parsed from the CREATE statement (tables only, best effort).
     pub columns: Vec<Column>,
@@ -199,11 +207,36 @@ struct RowWalk {
     notes: Vec<String>,
     /// Stop once this many rows are collected (0 = no limit, used for the schema walk).
     want: usize,
+    /// Longest text value decoded whole, and the whole text still allowed above [`MAX_TEXT`].
+    text_cap: usize,
+    text_budget: usize,
 }
 
 impl RowWalk {
     fn new(want: usize) -> Self {
-        RowWalk { index_tree: false, visited: Vec::new(), budget: MAX_PAGES_WALKED, out: Vec::new(), notes: Vec::new(), want }
+        RowWalk {
+            index_tree: false,
+            visited: Vec::new(),
+            budget: MAX_PAGES_WALKED,
+            out: Vec::new(),
+            notes: Vec::new(),
+            want,
+            text_cap: MAX_TEXT,
+            text_budget: 0,
+        }
+    }
+
+    /// Keep a row. While text past [`MAX_TEXT`] is read, the row's text spends the budget; once it
+    /// is spent, later rows are cut at [`MAX_TEXT`].
+    fn keep(&mut self, row: Row) {
+        if self.text_cap > MAX_TEXT {
+            let text: usize = row.values.iter().map(|value| if let CellValue::Text { text, .. } = value { text.len() } else { 0 }).sum();
+            self.text_budget = self.text_budget.saturating_sub(text);
+            if self.text_budget == 0 {
+                self.text_cap = MAX_TEXT;
+            }
+        }
+        self.out.push(row);
     }
 }
 
@@ -401,10 +434,25 @@ impl<'a> SqliteDb<'a> {
         Overview { header: self.header.clone(), file_size, page_count_from_size, integrity_notes: notes, schema, schema_truncated }
     }
 
-    /// Walk the `sqlite_schema` b-tree (rooted at page 1) and return its objects.
+    /// Walk the `sqlite_schema` b-tree (rooted at page 1) and return its objects. Columns are
+    /// parsed from the whole CREATE statement; the text shown is cut at [`MAX_TEXT`] bytes.
     pub fn schema(&self) -> (Vec<SchemaObject>, bool) {
+        let (mut objects, truncated) = self.whole_schema();
+        for object in &mut objects {
+            for text in [&mut object.obj_type, &mut object.name, &mut object.tbl_name, &mut object.sql] {
+                cut_at_max_text(text);
+            }
+        }
+        (objects, truncated)
+    }
+
+    /// The schema objects with their whole text (up to [`MAX_SCHEMA_TEXT`] while
+    /// [`MAX_SCHEMA_TEXT_TOTAL`] lasts), for reading rows.
+    fn whole_schema(&self) -> (Vec<SchemaObject>, bool) {
         let mut out = Vec::new();
         let mut w = RowWalk::new(MAX_SCHEMA_OBJECTS);
+        w.text_cap = MAX_SCHEMA_TEXT;
+        w.text_budget = MAX_SCHEMA_TEXT_TOTAL;
         self.collect_table_rows(&mut w, 1, 0);
         let truncated = w.out.len() >= MAX_SCHEMA_OBJECTS;
         for row in w.out {
@@ -434,7 +482,7 @@ impl<'a> SqliteDb<'a> {
     }
 
     fn without_rowid_table(&self, rootpage: u32) -> Option<SchemaObject> {
-        self.schema().0.into_iter().find(|obj| obj.obj_type == "table" && obj.rootpage == rootpage && is_without_rowid(&obj.sql))
+        self.whole_schema().0.into_iter().find(|obj| obj.obj_type == "table" && obj.rootpage == rootpage && is_without_rowid(&obj.sql))
     }
 
     /// Count the rows of the table rooted at `rootpage`, including interior index records.
@@ -480,7 +528,7 @@ impl<'a> SqliteDb<'a> {
         let hit_cap = w.out.len() >= want && want > 0;
         let skipped = offset.min(w.out.len());
         let mut page: Vec<Row> = w.out.into_iter().skip(offset).take(limit).collect();
-        let (schema, _) = self.schema();
+        let (schema, _) = self.whole_schema();
         if let Some(table) = schema.iter().find(|o| o.obj_type == "table" && o.rootpage == rootpage) {
             let definitions = column_definitions(&table.sql);
             let generated: Vec<bool> = definitions.iter().map(|(_, rest)| is_virtual_column(rest)).collect();
@@ -599,13 +647,13 @@ impl<'a> SqliteDb<'a> {
                     }
                     let row = page.cell_offset(i).and_then(|cell_off| {
                         if w.index_tree {
-                            self.read_index_cell(page.data, cell_off, &mut w.notes)
+                            self.read_index_cell(page.data, cell_off, w.text_cap, &mut w.notes)
                         } else {
-                            self.read_table_leaf_cell(page.data, cell_off, &mut w.notes)
+                            self.read_table_leaf_cell(page.data, cell_off, w.text_cap, &mut w.notes)
                         }
                     });
                     match row {
-                        Some(row) => w.out.push(row),
+                        Some(row) => w.keep(row),
                         None => w.notes.push(format!("Skipped an unreadable row on page {pageno}.")),
                     }
                 }
@@ -624,9 +672,12 @@ impl<'a> SqliteDb<'a> {
                         if w.want != 0 && w.out.len() >= w.want {
                             return;
                         }
-                        let row = page.cell_offset(i).and_then(|off| off.checked_add(4)).and_then(|off| self.read_index_cell(page.data, off, &mut w.notes));
+                        let row = page
+                            .cell_offset(i)
+                            .and_then(|off| off.checked_add(4))
+                            .and_then(|off| self.read_index_cell(page.data, off, w.text_cap, &mut w.notes));
                         match row {
-                            Some(row) => w.out.push(row),
+                            Some(row) => w.keep(row),
                             None => w.notes.push(format!("Skipped an unreadable row on page {pageno}.")),
                         }
                     }
@@ -645,23 +696,23 @@ impl<'a> SqliteDb<'a> {
     }
 
     /// Decode one table-leaf cell into a row, following overflow pages if needed.
-    fn read_table_leaf_cell(&self, page: &[u8], cell_off: usize, notes: &mut Vec<String>) -> Option<Row> {
+    fn read_table_leaf_cell(&self, page: &[u8], cell_off: usize, text_cap: usize, notes: &mut Vec<String>) -> Option<Row> {
         let (payload_len, n1) = varint(page, cell_off)?;
         let (rowid, n2) = varint(page, cell_off.checked_add(n1)?)?;
         let body_off = cell_off.checked_add(n1)?.checked_add(n2)?;
         let payload_len = usize::try_from(payload_len).ok()?;
         let payload = self.assemble_payload(page, body_off, payload_len, true, notes)?;
-        let values = parse_record(&payload, self.header.text_encoding);
+        let values = parse_record(&payload, self.header.text_encoding, text_cap);
         let rowid = i64::from_le_bytes(rowid.to_le_bytes());
         Some(Row { rowid: Some(rowid), values })
     }
 
     /// Index cells hold a whole row, without a rowid, using the index local-payload formula.
-    fn read_index_cell(&self, page: &[u8], cell_off: usize, notes: &mut Vec<String>) -> Option<Row> {
+    fn read_index_cell(&self, page: &[u8], cell_off: usize, text_cap: usize, notes: &mut Vec<String>) -> Option<Row> {
         let (payload_len, n) = varint(page, cell_off)?;
         let payload_len = usize::try_from(payload_len).ok()?;
         let payload = self.assemble_payload(page, cell_off.checked_add(n)?, payload_len, false, notes)?;
-        Some(Row { rowid: None, values: parse_record(&payload, self.header.text_encoding) })
+        Some(Row { rowid: None, values: parse_record(&payload, self.header.text_encoding, text_cap) })
     }
 
     /// Assemble a cell payload: the local part plus any overflow-page chain, capped.
@@ -715,8 +766,8 @@ impl<'a> SqliteDb<'a> {
     }
 }
 
-/// Decode a SQLite record (the "payload") into column values.
-fn parse_record(payload: &[u8], text_encoding: &str) -> Vec<CellValue> {
+/// Decode a SQLite record (the "payload") into column values, cutting text at `text_cap` bytes.
+fn parse_record(payload: &[u8], text_encoding: &str, text_cap: usize) -> Vec<CellValue> {
     let mut out = Vec::new();
     let Some((hdr_len, n)) = varint(payload, 0) else { return out };
     let hdr_len = hdr_len as usize;
@@ -740,7 +791,7 @@ fn parse_record(payload: &[u8], text_encoding: &str) -> Vec<CellValue> {
     // Then read each value from the body region.
     let mut body = hdr_len;
     for st in types {
-        let (val, size) = decode_serial(st, payload, body, text_encoding);
+        let (val, size) = decode_serial(st, payload, body, text_encoding, text_cap);
         out.push(val);
         body = body.saturating_add(size);
     }
@@ -748,7 +799,7 @@ fn parse_record(payload: &[u8], text_encoding: &str) -> Vec<CellValue> {
 }
 
 /// Decode one serial-typed value at `off`; returns the value and its byte size.
-fn decode_serial(serial: u64, data: &[u8], off: usize, text_encoding: &str) -> (CellValue, usize) {
+fn decode_serial(serial: u64, data: &[u8], off: usize, text_encoding: &str, text_cap: usize) -> (CellValue, usize) {
     let size = match serial {
         1..=4 => serial as usize,
         5 => 6,
@@ -787,7 +838,7 @@ fn decode_serial(serial: u64, data: &[u8], off: usize, text_encoding: &str) -> (
             // Odd and >= 13: text of (n-13)/2 bytes, using the database's declared encoding.
             let len = size;
             let slice = data.get(off..off.saturating_add(len).min(data.len())).unwrap_or(&[]);
-            let mut value = encoded_text_value(slice, text_encoding);
+            let mut value = capped_text_value(slice, text_encoding, text_cap);
             if slice.len() < len
                 && let CellValue::Text { truncated, .. } = &mut value
             {
@@ -811,12 +862,17 @@ fn text_value(slice: &[u8]) -> CellValue {
     encoded_text_value(slice, "utf-8")
 }
 
-/// Decode a TEXT value, cutting at [`MAX_TEXT`] bytes. A truncated value ends at a character
-/// boundary, so its shown prefix never gains a replacement character it didn't have; the flag
-/// still says the value was cut.
+/// Decode a TEXT value, cutting at [`MAX_TEXT`] bytes.
 fn encoded_text_value(slice: &[u8], encoding: &str) -> CellValue {
-    let truncated = slice.len() > MAX_TEXT;
-    let cut = MAX_TEXT.min(slice.len());
+    capped_text_value(slice, encoding, MAX_TEXT)
+}
+
+/// Decode a TEXT value, cutting at `cap` bytes. A truncated value ends at a character boundary,
+/// so its shown prefix never gains a replacement character it didn't have; the flag still says
+/// the value was cut.
+fn capped_text_value(slice: &[u8], encoding: &str, cap: usize) -> CellValue {
+    let truncated = slice.len() > cap;
+    let cut = cap.min(slice.len());
     let text = match encoding {
         "utf-16le" | "utf-16be" => {
             let mut bytes = cut;
@@ -862,6 +918,14 @@ fn blob_value(slice: &[u8], len: usize) -> CellValue {
     let digest = sha2::Sha256::digest(slice);
     let prefix: String = digest.iter().take(8).map(|b| format!("{b:02x}")).collect();
     CellValue::Blob { len, sha256_prefix: prefix }
+}
+
+/// Cut text shown to the reader at [`MAX_TEXT`] bytes, on a character boundary.
+fn cut_at_max_text(text: &mut String) {
+    if text.len() > MAX_TEXT {
+        let end = (0..=MAX_TEXT).rev().find(|&i| text.is_char_boundary(i)).unwrap_or(0);
+        text.truncate(end);
+    }
 }
 
 fn is_without_rowid(sql: &str) -> bool {
@@ -1783,15 +1847,15 @@ mod tests {
 
     #[test]
     fn decode_serial_types() {
-        assert_eq!(decode_serial(0, &[], 0, "utf-8").0, CellValue::Null);
-        assert_eq!(decode_serial(8, &[], 0, "utf-8").0, CellValue::Int(0));
-        assert_eq!(decode_serial(9, &[], 0, "utf-8").0, CellValue::Int(1));
-        assert_eq!(decode_serial(1, &[0xff], 0, "utf-8").0, CellValue::Int(-1));
-        assert_eq!(decode_serial(2, &[0x01, 0x00], 0, "utf-8").0, CellValue::Int(256));
+        assert_eq!(decode_serial(0, &[], 0, "utf-8", MAX_TEXT).0, CellValue::Null);
+        assert_eq!(decode_serial(8, &[], 0, "utf-8", MAX_TEXT).0, CellValue::Int(0));
+        assert_eq!(decode_serial(9, &[], 0, "utf-8", MAX_TEXT).0, CellValue::Int(1));
+        assert_eq!(decode_serial(1, &[0xff], 0, "utf-8", MAX_TEXT).0, CellValue::Int(-1));
+        assert_eq!(decode_serial(2, &[0x01, 0x00], 0, "utf-8", MAX_TEXT).0, CellValue::Int(256));
         // text: serial 13 -> (13-13)/2 = 0 bytes; serial 19 -> 3 bytes
-        assert_eq!(decode_serial(19, b"abc", 0, "utf-8"), (CellValue::Text { text: "abc".into(), truncated: false }, 3));
+        assert_eq!(decode_serial(19, b"abc", 0, "utf-8", MAX_TEXT), (CellValue::Text { text: "abc".into(), truncated: false }, 3));
         // blob: serial 18 -> (18-12)/2 = 3 bytes
-        match decode_serial(18, b"xyz", 0, "utf-8").0 {
+        match decode_serial(18, b"xyz", 0, "utf-8", MAX_TEXT).0 {
             CellValue::Blob { len, .. } => assert_eq!(len, 3),
             other => panic!("expected blob, got {other:?}"),
         }
@@ -1864,5 +1928,23 @@ mod tests {
             ),
             vec![false, false, true, true, false, true, false]
         );
+    }
+
+    /// Schema text is read whole only while the walk's budget lasts; after that, text is cut at
+    /// the usual cap. Text shown to the reader is cut at the cap on a character boundary.
+    #[test]
+    fn whole_schema_text_stops_when_its_budget_is_spent() {
+        let mut w = RowWalk::new(0);
+        w.text_cap = MAX_SCHEMA_TEXT;
+        w.text_budget = 10;
+        w.keep(Row { rowid: Some(1), values: vec![text("1234"), CellValue::Int(5)] });
+        assert_eq!((w.text_cap, w.text_budget), (MAX_SCHEMA_TEXT, 6));
+        w.keep(Row { rowid: Some(2), values: vec![text("123456")] });
+        assert_eq!((w.text_cap, w.text_budget), (MAX_TEXT, 0));
+        assert_eq!(w.out.len(), 2);
+
+        let mut shown = format!("{}é", "a".repeat(MAX_TEXT - 1));
+        cut_at_max_text(&mut shown);
+        assert_eq!(shown, "a".repeat(MAX_TEXT - 1));
     }
 }
