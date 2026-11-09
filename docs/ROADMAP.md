@@ -1520,7 +1520,7 @@ Owner: open · Status: in progress
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-substitutions
 - [x] Require a complete Cargo package version before a registry or vendor path becomes Rust dependency evidence.
       — claimed: Afloat16, branch bugfix/r3.12-rust-dependency-versions
-- [ ] Swift symbols name the right generic parameter in an associated type. `Qy` numbers its
+- [x] Swift symbols name the right generic parameter in an associated type. `Qy` numbers its
       parameter the way `q` does (`Qy_` is the second parameter `B`, `Qy0_` the third), but the
       demangler read `Qy_` as `A`, so `Swift.Zip2Sequence.Iterator.next()` returned
       `(A.Element, A.Element)?` where the symbol says `(A.Element, B.Element)?`.

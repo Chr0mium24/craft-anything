@@ -718,7 +718,8 @@ impl<'a> D<'a> {
                     self.push(n)
                 }
                 b'y' => {
-                    let i = self.index()?;
+                    // Numbered like `q`: `Qy_` is the second generic parameter, `Qy0_` the third.
+                    let i = self.index()?.checked_add(1).ok_or("overflow")?;
                     let name = self.pop_name()?;
                     self.note_param(i);
                     let n = N::Member { base: Box::new(N::Param(0, i)), name };
