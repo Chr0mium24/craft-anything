@@ -1094,6 +1094,17 @@ fn func_text(ty: &N, labels: &[Option<String>], depth: usize) -> String {
     }
 }
 
+/// The wrapped type of a `?` or `!` optional. A function type or a protocol composition goes in
+/// parentheses, so the `?` reads as applying to the whole type, not to the result or last protocol.
+fn optional_operand(t: &N, depth: usize) -> String {
+    let text = render(t, depth);
+    match t {
+        N::Func { .. } => format!("({text})"),
+        N::Existential(protos) if protos.len() > 1 => format!("({text})"),
+        _ => text,
+    }
+}
+
 fn render(n: &N, depth: usize) -> String {
     if depth > MAX_RENDER_DEPTH {
         return "…".into();
@@ -1107,8 +1118,8 @@ fn render(n: &N, depth: usize) -> String {
             match (b.as_str(), args.as_slice()) {
                 ("Swift.Array", [t]) => format!("[{}]", render(t, d)),
                 ("Swift.Dictionary", [k, v]) => format!("[{} : {}]", render(k, d), render(v, d)),
-                ("Swift.Optional", [t]) => format!("{}?", render(t, d)),
-                ("Swift.ImplicitlyUnwrappedOptional", [t]) => format!("{}!", render(t, d)),
+                ("Swift.Optional", [t]) => format!("{}?", optional_operand(t, d)),
+                ("Swift.ImplicitlyUnwrappedOptional", [t]) => format!("{}!", optional_operand(t, d)),
                 _ => format!("{b}<{}>", args.iter().map(|a| render(a, d)).collect::<Vec<_>>().join(", ")),
             }
         }

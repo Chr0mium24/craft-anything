@@ -1679,7 +1679,7 @@ Owner: open · Status: in progress
       isn't read: the key format lists `placeholder` and a Display P3 variant's key shows
       `placeholder: 1` instead of `display-gamut: 1`.
       — claimed: Chr0mium24, branch bugfix/r3.12-car-key-format-workaround
-- [ ] Swift optionals of function types keep their parentheses. The demangler printed the type
+- [x] Swift optionals of function types keep their parentheses. The demangler printed the type
       inside `?` or `!` as is, so an optional closure read as a closure that returns an optional:
       `WeatherKit.WDSEndpoint.portOverrideProvider` read `() -> Swift.Int?` where `swift-demangle`
       prints `(() -> Swift.Int)?`. An optional protocol composition read `main.P & main.Q?` for
