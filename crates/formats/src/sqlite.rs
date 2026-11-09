@@ -484,6 +484,7 @@ impl<'a> SqliteDb<'a> {
         if let Some(table) = schema.iter().find(|o| o.obj_type == "table" && o.rootpage == rootpage) {
             let definitions = column_definitions(&table.sql);
             let generated: Vec<bool> = definitions.iter().map(|(_, rest)| is_virtual_column(rest)).collect();
+            let real: Vec<bool> = definitions.iter().map(|(column, _)| has_real_affinity(&column.type_name)).collect();
             // WITHOUT ROWID rows were already placed in declaration order above.
             if !w.index_tree && generated.contains(&true) {
                 for row in &mut page {
@@ -521,6 +522,15 @@ impl<'a> SqliteDb<'a> {
                 for row in &mut page {
                     if let (Some(rowid), Some(value @ CellValue::Null)) = (row.rowid, row.values.get_mut(index)) {
                         *value = CellValue::Int(rowid);
+                    }
+                }
+            }
+            // SQLite stores a REAL with no fractional part as an integer and turns it back into a
+            // REAL when it reads a REAL column; a filled-in default is read the same way.
+            for row in &mut page {
+                for (value, _) in row.values.iter_mut().zip(&real).filter(|(_, is_real)| **is_real) {
+                    if let CellValue::Int(n) = *value {
+                        *value = CellValue::Real(n as f64);
                     }
                 }
             }
@@ -937,6 +947,15 @@ fn is_virtual_column(rest: &str) -> bool {
         }
     }
     generated
+}
+
+/// True when SQLite gives a column of this declared type REAL affinity. SQLite looks for these
+/// parts of the type in order, ignoring case: INT means INTEGER; CHAR, CLOB or TEXT mean TEXT;
+/// BLOB (or no type) means BLOB; and only then REAL, FLOA or DOUB mean REAL. So `FLOATING POINT`
+/// is an INTEGER column.
+fn has_real_affinity(type_name: &str) -> bool {
+    let upper = type_name.to_ascii_uppercase();
+    !["INT", "CHAR", "CLOB", "TEXT", "BLOB"].iter().any(|part| upper.contains(part)) && ["REAL", "FLOA", "DOUB"].iter().any(|part| upper.contains(part))
 }
 
 /// Spread a rowid table's record fields over its declared columns. A VIRTUAL generated column
@@ -1864,5 +1883,58 @@ mod tests {
             ),
             vec![false, false, true, true, false, true, false]
         );
+    }
+
+    /// SQLite stores a REAL with no fractional part as an integer and reads it back as a REAL.
+    /// The declared type is checked in SQLite's order, so `FLOATING POINT` (which contains INT)
+    /// is an INTEGER column, and NUMERIC and untyped columns keep their integers too.
+    #[test]
+    fn whole_numbers_in_real_columns_read_as_real() {
+        use craft_anything_testkit::sqlite::{Val, table_db};
+        let sql = "CREATE TABLE t(a REAL, b FLOAT, c DOUBLE PRECISION, d \"real\" NOT NULL, e FLOATING POINT, f NUMERIC, g, h REAL, i REAL)";
+        let record = vec![
+            Val::Int(1),
+            Val::Int(-2),
+            Val::Int(0),
+            Val::Int(140_737_488_355_327),
+            Val::Int(5),
+            Val::Int(6),
+            Val::Int(7),
+            Val::Real(1.5),
+            Val::Text("x".into()),
+        ];
+        let bytes = table_db(sql, &[(1, record)]);
+        let page = SqliteDb::parse(&bytes).expect("fixture parses").read_rows(2, 0, 10);
+        assert_eq!(
+            page.rows[0].values,
+            vec![
+                CellValue::Real(1.0),
+                CellValue::Real(-2.0),
+                CellValue::Real(0.0),
+                CellValue::Real(140_737_488_355_327.0),
+                CellValue::Int(5),
+                CellValue::Int(6),
+                CellValue::Int(7),
+                CellValue::Real(1.5),
+                text("x"),
+            ]
+        );
+    }
+
+    /// The same holds for a WITHOUT ROWID key and for the default of a REAL column added later.
+    #[test]
+    fn real_keys_and_added_real_defaults_read_as_real() {
+        use craft_anything_testkit::sqlite::{Val, table_db, without_rowid_db};
+        let sql = "CREATE TABLE t(k REAL, n INT, v DOUBLE, PRIMARY KEY (k, n)) WITHOUT ROWID";
+        let bytes = without_rowid_db(sql, &[vec![Val::Int(3), Val::Int(1), Val::Int(4)]]);
+        let page = SqliteDb::parse(&bytes).expect("fixture parses").read_rows(2, 0, 10);
+        assert_eq!(page.rows[0].values, vec![CellValue::Real(3.0), CellValue::Int(1), CellValue::Real(4.0)]);
+
+        // ALTER TABLE ADD COLUMN r REAL DEFAULT 5: the old record holds only `a`.
+        let bytes =
+            table_db("CREATE TABLE t(a TEXT, r REAL DEFAULT 5)", &[(1, vec![Val::Text("old".into())]), (2, vec![Val::Text("new".into()), Val::Int(6)])]);
+        let page = SqliteDb::parse(&bytes).expect("fixture parses").read_rows(2, 0, 10);
+        assert_eq!(page.rows[0].values, vec![text("old"), CellValue::Real(5.0)]);
+        assert_eq!(page.rows[1].values, vec![text("new"), CellValue::Real(6.0)]);
     }
 }
