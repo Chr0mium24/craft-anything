@@ -1397,6 +1397,11 @@ Owner: open · Status: in progress
       — claimed: Afloat16, branch bugfix/r3.12-bplist-typed-objects
 - [x] Visit XML plist values only inside a complete, correctly encoded document.
       — claimed: Afloat16, branch bugfix/r3.12-xml-plist-document
+- [ ] Name code-directory flags with the bits Apple uses: hard 0x100, kill 0x200, expires 0x400,
+      restrict 0x800, enforcement 0x1000, library-validation 0x2000. The table used 0x4–0x80 for
+      them and named 0x200 and 0x800 as other flags, so a library-validation signature (0x2000)
+      showed no flag names and 0x12200 read "allowed-entitlements,runtime".
+      — claimed: Chr0mium24, branch bugfix/r3.12-codesign-flag-names
 - [x] Keep code-signature children and verification reads within their declared superblob.
       — claimed: Afloat16, branch bugfix/r3.12-codesign-superblob-length-boundary-20261105
 - [x] Refuse short ELF64 header and section records and handle section-table offsets at the address limit safely.
