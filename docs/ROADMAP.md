@@ -1427,6 +1427,9 @@ Owner: open · Status: in progress
       zero-fill sections, records file offset 0 like `__TEXT`, and the entry was placed in that
       segment instead of in `__TEXT` (`/bin/cat` reads 0x100008588 for 0x100000588).
       — claimed: Chr0mium24, branch bugfix/r3.12-macho-entry-zero-fill
+- [ ] Name DriverKit and visionOS simulator Mach-O binaries in the binary view: its platform table
+      stopped at 9 and 11, so a `.dext` read "unknown" while the dependency view said "driverkit".
+      — claimed: Chr0mium24, branch bugfix/r3.12-macho-platform-names
 - [x] Decode binary plist markers and dictionary keys according to their stored types.
       — claimed: Afloat16, branch bugfix/r3.12-bplist-typed-objects
 - [x] Visit XML plist values only inside a complete, correctly encoded document.
