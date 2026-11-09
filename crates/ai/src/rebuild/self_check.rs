@@ -129,7 +129,10 @@ impl Worker {
                 "The builder is checking its work against the original…"
             };
             self.step(ws, Step::Build, Status::Building, checking)?;
-            let (text, line) = match self.run_checks_within(ws, kind.as_ref(), SELF_CHECK_ROUND, Some(SELF_CHECK_LIMIT)) {
+            let checked = self.checks_unless_unchanged(ws, kind.as_ref(), SELF_CHECK_ROUND, || {
+                self.run_checks_within(ws, kind.as_ref(), SELF_CHECK_ROUND, Some(SELF_CHECK_LIMIT))
+            });
+            let (text, line) = match checked {
                 Ok(checks) => {
                     let line = format!("The builder checked its work: {}.", summary(&checks, good_enough));
                     (report(&checks, good_enough, &open_questions(ws)), line)

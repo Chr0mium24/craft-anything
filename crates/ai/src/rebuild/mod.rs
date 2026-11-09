@@ -42,6 +42,7 @@ pub mod activity;
 mod brief;
 mod check;
 pub mod feed;
+mod kept_check;
 pub mod kinds;
 mod locate;
 pub mod notes;
@@ -300,6 +301,7 @@ impl RebuildRun {
             self_check: None,
             reset_progress_after_notes: false,
             keys: hub.keys.clone(),
+            kept_checks: Mutex::default(),
         };
         let r2 = running.clone();
         let key_store = hub.keys.clone();
@@ -496,6 +498,8 @@ struct Worker {
     reset_progress_after_notes: bool,
     /// The backends' stored keys, for an agent CLI that asks the host to authenticate (Devin).
     keys: crate::keys::KeyStore,
+    /// The last check round in which everything worked, kept while nothing it looks at changes.
+    kept_checks: Mutex<kept_check::KeptChecks>,
 }
 
 /// The project a run records its usage in, and when it last did.
@@ -743,6 +747,7 @@ impl Worker {
         opts: &RunOptions,
     ) -> Result<String, ToolError> {
         let mut progress = BuildProgress::load(&ws.root)?;
+        *self.kept_checks.lock().unwrap_or_else(PoisonError::into_inner) = kept_check::KeptChecks::from_saved(&progress, ws);
         let mut progress_available = true;
         let mut fingerprints = AppFingerprintCache::default();
         // Try again has no message. Only an explicit new request starts another attempt on
@@ -978,6 +983,9 @@ impl Worker {
             // round adds to it, across runs, until the limit stops the build.
             ws.manifest.not_working_checks = if checks.iter().all(|c| c.passed) { 0 } else { ws.manifest.not_working_checks.saturating_add(1) };
             ws.save()?;
+            // Kept for the next prompt when every check worked; saved after craft.json has the round.
+            progress.checked = self.kept_checks.lock().unwrap_or_else(PoisonError::into_inner).saved_for(round);
+            progress.save(&ws.root)?;
             for c in &checks {
                 self.emit(RunEvent::Checked(c.clone()));
             }
@@ -1112,6 +1120,10 @@ impl Worker {
     /// an error couldn't look at all (a browser that went away), which says nothing about the
     /// build, so it gets a second go before the run stops, and the run says what is really wrong.
     fn checks_with_a_retry(&self, ws: &Workspace, kind: &dyn kinds::TargetKind, round: u32) -> Result<Vec<CheckResult>, ToolError> {
+        self.checks_unless_unchanged(ws, kind, round, || self.checks_with_a_retry_now(ws, kind, round))
+    }
+
+    fn checks_with_a_retry_now(&self, ws: &Workspace, kind: &dyn kinds::TargetKind, round: u32) -> Result<Vec<CheckResult>, ToolError> {
         let e = match self.run_checks(ws, kind, round) {
             Err(e) if e.code != ErrorCode::Cancelled => e,
             done => return done,

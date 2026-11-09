@@ -255,6 +255,15 @@ impl CheckCx<'_> {
     }
 }
 
+/// The ids of the WASM plugins' checks that join `kind`'s.
+pub(super) fn plugin_ids(session: &craft_anything_engine::Session, kind: &dyn TargetKind) -> Vec<String> {
+    craft_anything_engine::wasm_plugins::checks(session)
+        .iter()
+        .filter(|c| c.kinds.is_empty() || c.kinds.iter().any(|k| k == kind.id()))
+        .map(|c| c.id.to_string())
+        .collect()
+}
+
 impl Worker {
     /// Run the checks the kind asks for in this round, in order, then the WASM plugins' checks for
     /// this kind. One that fails stops the rest: a later check needs what an earlier one proved (a
