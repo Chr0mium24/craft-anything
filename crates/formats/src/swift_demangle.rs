@@ -547,8 +547,9 @@ impl<'a> D<'a> {
         })
     }
 
-    fn accessor(&mut self) -> Option<&'static str> {
-        let a = match self.peek()? {
+    fn accessor(&mut self) -> R<Option<&'static str>> {
+        let Some(c) = self.peek() else { return Ok(None) };
+        let a = match c {
             b'g' => "getter",
             b's' => "setter",
             b'G' => "global getter",
@@ -557,14 +558,29 @@ impl<'a> D<'a> {
             b'm' => "materializeForSet",
             b'M' => "modify",
             b'r' => "read",
-            b'a' => "unsafeMutableAddressor",
-            b'l' => "unsafeAddressor",
+            b'a' | b'l' => return self.addressor().map(Some),
             b'i' => "init",
             b'p' => "",
-            _ => return None,
+            _ => return Ok(None),
         };
         self.pos += 1;
-        Some(a)
+        Ok(Some(a))
+    }
+
+    /// An addressor: `a` (mutable) or `l`, then a letter for its kind.
+    fn addressor(&mut self) -> R<&'static str> {
+        let mutable = self.next()? == b'a';
+        Ok(match (mutable, self.next()?) {
+            (true, b'u') => "unsafeMutableAddressor",
+            (true, b'O') => "owningMutableAddressor",
+            (true, b'o') => "nativeOwningMutableAddressor",
+            (true, b'P') => "nativePinningMutableAddressor",
+            (false, b'u') => "unsafeAddressor",
+            (false, b'O') => "owningAddressor",
+            (false, b'o') => "nativeOwningAddressor",
+            (false, b'p') => "nativePinningAddressor",
+            _ => return Err("unsupported addressor kind".into()),
+        })
     }
 
     fn conformance(&mut self) -> R<N> {
@@ -886,7 +902,7 @@ impl<'a> D<'a> {
                 let ty = self.pop_entity_type(false)?;
                 let labels = self.pop_labels(Self::param_count(&ty))?;
                 let ctx = self.pop_context()?;
-                let accessor = self.accessor();
+                let accessor = self.accessor()?;
                 self.push(N::Entity { kind: EKind::Subscript, ctx: Box::new(ctx), name: None, labels, ty: Some(Box::new(ty)), accessor, is_static: false })
             }
             b'l' => {
@@ -959,7 +975,7 @@ impl<'a> D<'a> {
                 let ty = self.pop_type()?;
                 let name = self.pop_name()?;
                 let ctx = self.pop_context()?;
-                let accessor = self.accessor();
+                let accessor = self.accessor()?;
                 self.push(N::Entity {
                     kind: EKind::Var,
                     ctx: Box::new(ctx),
