@@ -1295,8 +1295,11 @@ Owner: open · Status: in progress
 - [x] WITHOUT ROWID rows stored before ALTER TABLE ADD COLUMN show the added columns' defaults,
       as rowid tables already do, instead of NULL.
       — claimed: Plastic-time, branch bugfix/r3.12-sqlite-without-rowid-added-columns
-- [ ] Fill added SQLite columns whose DEFAULT is a hex integer or a literal in parentheses
-      (`DEFAULT 0x10`, `DEFAULT (5)`); they show NULL with a note today.
+- [x] Fill added SQLite columns whose DEFAULT is a hex integer or a literal in parentheses
+      (`DEFAULT 0x10`, `DEFAULT (5)`); they show NULL with a note today. Hex integers keep
+      SQLite's 64-bit two's-complement value; one parenthesized literal is filled, while
+      expressions and nested parentheses stay unknown with the note.
+      — claimed: AlexJoaquimPereira, branch bugfix/r3.12-sqlite-added-defaults
 - [x] Give filled-in SQLite defaults their column's affinity, as SQLite reads them: a TEXT column
       reads `DEFAULT 5` as '5' and `DEFAULT 007` as '7'; an INTEGER or NUMERIC column reads
       `DEFAULT '7'` as 7 and `DEFAULT 5.0` as 5; a REAL column reads `DEFAULT '1.5'` as 1.5; a BLOB
@@ -1492,8 +1495,9 @@ Owner: open · Status: in progress
       it, and a comment inside a definition isn't part of its type, so INTEGER PRIMARY KEY still
       marks the rowid alias.
       — claimed: Plastic-time, branch bugfix/r3.12-sqlite-create-table-comments
-- [ ] Keep the comma inside a SQLite type's parentheses: `DECIMAL(10, 2)` is listed as
-      `DECIMAL(10 2)`.
+- [x] Keep the comma inside a SQLite type's parentheses: `DECIMAL(10, 2)` is listed as
+      `DECIMAL(10 2)`. The type keeps the comma inside its parentheses, and the schema overview
+      shows it unchanged. — claimed: AlexJoaquimPereira, branch bugfix/r3.12-sqlite-type-comma
 
 ### R3.13 Web inspection correctness
 Owner: open · Status: in progress

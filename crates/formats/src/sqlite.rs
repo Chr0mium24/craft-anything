@@ -1283,12 +1283,16 @@ fn column_default(rest: &str, affinity: Affinity) -> (CellValue, bool) {
     (CellValue::Null, true)
 }
 
-/// A literal DEFAULT as SQLite reads it into a column of this affinity. A TEXT column reads a
-/// number as text; a NUMERIC or REAL column reads text that is a number as that number (a REAL
-/// column then turns a whole number into a REAL, as it does for stored values); a BLOB column,
-/// or one with no type, keeps the literal's own type.
+/// A literal DEFAULT as SQLite reads it into a column of this affinity: `NULL`, booleans, text,
+/// `X'…'`, numbers, hex integers and one parenthesized literal; anything else (an expression, a
+/// keyword) stays unknown. A TEXT column reads a number as text; a NUMERIC or REAL column reads
+/// text that is a number as that number (a REAL column then turns a whole number into a REAL, as
+/// it does for stored values); a BLOB column, or one with no type, keeps the literal's own type.
 fn literal_default(tokens: &[&str], affinity: Affinity) -> Option<CellValue> {
     let token = *tokens.first()?;
+    if token == "(" {
+        return parenthesized_literal(tokens, affinity);
+    }
     if token.eq_ignore_ascii_case("NULL") {
         return Some(CellValue::Null);
     }
@@ -1327,8 +1331,14 @@ fn literal_default(tokens: &[&str], affinity: Affinity) -> Option<CellValue> {
         let bytes = bytes?;
         return Some(blob_value(&bytes, bytes.len()));
     }
+    if let Some(n) = hex_integer(token) {
+        return Some(integer_default(n, affinity));
+    }
     let number = if matches!(token, "+" | "-") {
         let value = *tokens.get(1)?;
+        if let Some(n) = hex_integer(value) {
+            return Some(integer_default(if token == "-" { n.checked_neg()? } else { n }, affinity));
+        }
         format!("{token}{value}")
     } else {
         token.to_owned()
@@ -1384,6 +1394,65 @@ fn numeric_value(text: &str) -> Option<CellValue> {
 /// stays unsupported.
 fn finite(value: CellValue) -> Option<CellValue> {
     (!matches!(value, CellValue::Real(real) if !real.is_finite())).then_some(value)
+}
+
+/// A SQLite hex integer is 64-bit two's complement, so `0xffffffffffffffff` is -1. An optional
+/// sign is accepted (`-0x10`), and a single underscore may separate two hex digits (`0xF_F`);
+/// any other placement is rejected.
+fn hex_integer(token: &str) -> Option<i64> {
+    let (negative, unsigned) = match token.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, token.strip_prefix('+').unwrap_or(token)),
+    };
+    let digits = unsigned.strip_prefix("0x").or_else(|| unsigned.strip_prefix("0X"))?;
+    if digits.is_empty() {
+        return None;
+    }
+    let bytes = digits.as_bytes();
+    let mut clean = String::with_capacity(bytes.len());
+    let mut previous_was_digit = false;
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'_' {
+            if !previous_was_digit || !bytes.get(i.checked_add(1)?)?.is_ascii_hexdigit() {
+                return None;
+            }
+            previous_was_digit = false;
+            continue;
+        }
+        if !b.is_ascii_hexdigit() {
+            return None;
+        }
+        clean.push(b as char);
+        previous_was_digit = true;
+    }
+    let n = u64::from_str_radix(&clean, 16).ok()? as i64;
+    if negative { n.checked_neg() } else { Some(n) }
+}
+
+/// A single literal wrapped in one pair of parentheses, such as `(5)` or `('text')`. A
+/// parenthesized expression (`(5 + 1)`, `(lower('A'))`) stays unknown, as do nested parentheses.
+fn parenthesized_literal(tokens: &[&str], affinity: Affinity) -> Option<CellValue> {
+    let mut depth = 0usize;
+    let mut close = None;
+    for (i, token) in tokens.iter().enumerate() {
+        match *token {
+            "(" => depth = depth.saturating_add(1),
+            ")" => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    close = Some(i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let inside = tokens.get(1..close?)?;
+    match inside {
+        [one] => literal_default(&[*one], affinity),
+        [sign, _] if matches!(*sign, "+" | "-") || (*sign).eq_ignore_ascii_case("X") => literal_default(inside, affinity),
+        _ => None,
+    }
 }
 
 /// Split on top-level commas (ignoring commas inside parentheses, quotes and comments).
@@ -1446,12 +1515,14 @@ fn take_identifier(seg: &str) -> (String, &str) {
     }
 }
 
-/// The type name is the run of tokens before the first column-constraint keyword.
+/// The type name is the run of tokens before the first column-constraint keyword. A comma inside
+/// the type's parentheses belongs to it (`DECIMAL(10, 2)`); only the column separator is dropped.
 fn extract_type(rest: &str) -> String {
     let mut out = String::new();
     let mut depth = 0i32;
     for tok in rest.split_whitespace() {
-        let upper = tok.trim_end_matches(',').to_ascii_uppercase();
+        let bare = tok.trim_end_matches(',');
+        let upper = bare.to_ascii_uppercase();
         if depth == 0
             && matches!(
                 upper.as_str(),
@@ -1465,7 +1536,7 @@ fn extract_type(rest: &str) -> String {
         if !out.is_empty() {
             out.push(' ');
         }
-        out.push_str(tok.trim_end_matches(','));
+        out.push_str(if depth == 0 { bare } else { tok });
     }
     out
 }
@@ -1709,10 +1780,33 @@ mod tests {
             ("x DEFAULT null", CellValue::Null),
             ("x TEXT DEFAULT 'a),b''c'", text_value(b"a),b'c")),
             ("x INT CHECK(x <> 'DEFAULT') DEFAULT /* literal */ 7", CellValue::Int(7)),
+            ("x INT DEFAULT 0x10 NOT NULL", CellValue::Int(16)),
+            ("x INT DEFAULT -0x10", CellValue::Int(-16)),
+            ("x INT DEFAULT 0xF_F", CellValue::Int(255)),
+            ("x INT DEFAULT -0xF_F", CellValue::Int(-255)),
+            ("x INT DEFAULT 0xFFFFFFFFFFFFFFFF", CellValue::Int(-1)),
+            ("x DEFAULT (NULL)", CellValue::Null),
+            ("x INT DEFAULT (42)", CellValue::Int(42)),
+            ("x INT DEFAULT (5) NOT NULL", CellValue::Int(5)),
+            ("x INT DEFAULT (-2)", CellValue::Int(-2)),
+            ("x TEXT DEFAULT ('hi')", text_value(b"hi")),
+            ("x BLOB DEFAULT (X'00ff')", blob_value(&[0, 255], 2)),
         ] {
             short_record_case(declaration, vec![value], false);
         }
-        for declaration in ["x TEXT DEFAULT CURRENT_TIMESTAMP", "x DEFAULT (42)", "x DEFAULT (lower('A'))", "x DEFAULT X'zz'"] {
+        for declaration in [
+            "x TEXT DEFAULT CURRENT_TIMESTAMP",
+            "x DEFAULT (lower('A'))",
+            "x DEFAULT (5+1)",
+            "x DEFAULT ((5))",
+            "x INT DEFAULT 0x",
+            "x INT DEFAULT 0x10000000000000000",
+            "x INT DEFAULT 0x_F",
+            "x INT DEFAULT 0xF_",
+            "x INT DEFAULT 0xF__F",
+            "x INT DEFAULT 0xF_G",
+            "x DEFAULT X'zz'",
+        ] {
             short_record_case(declaration, vec![CellValue::Null], true);
         }
         assert_eq!(blob_value(&[0, 255], 2), CellValue::Blob { len: 2, sha256_prefix: "06eb7d6a69ee19e5".into() });
@@ -1777,6 +1871,15 @@ mod tests {
         assert_eq!(cols[0].type_name, "VARCHAR(50)");
         assert_eq!(cols[1].name, "odd");
         assert_eq!(cols[1].type_name, "NUMERIC");
+    }
+
+    #[test]
+    fn column_parsing_keeps_type_commas() {
+        let cols = parse_create_columns(
+            "CREATE TABLE t (amount DECIMAL(10, 2) NOT NULL, ratio NUMERIC(5,1), note TEXT DEFAULT 'a,b', id INTEGER PRIMARY KEY, name VARCHAR(50))",
+        );
+        let types: Vec<&str> = cols.iter().map(|c| c.type_name.as_str()).collect();
+        assert_eq!(types, ["DECIMAL(10, 2)", "NUMERIC(5,1)", "TEXT", "INTEGER", "VARCHAR(50)"]);
     }
 
     #[test]
@@ -2155,6 +2258,26 @@ mod tests {
         }
         // SQLite reads a number too large for a REAL as infinity; that stays unsupported.
         short_record_case("x INTEGER DEFAULT '1e400'", vec![CellValue::Null], true);
+    }
+
+    /// Hex and parenthesized literals take the column's affinity too (SQLite 3.51 readings).
+    #[test]
+    fn hex_and_parenthesized_defaults_take_the_column_affinity() {
+        for (declaration, value) in [
+            ("x TEXT DEFAULT 0x10", text("16")),
+            ("x TEXT DEFAULT -0xFFFFFFFFFFFFFFFF", text("1")),
+            ("x TEXT DEFAULT (5.0)", text("5.0")),
+            ("x TEXT DEFAULT (- 007)", text("-7")),
+            ("x TEXT DEFAULT (TRUE)", text("1")),
+            ("x INTEGER DEFAULT ('7')", CellValue::Int(7)),
+            ("x NUMERIC DEFAULT (1e3)", CellValue::Int(1000)),
+            ("x REAL DEFAULT 0x10", CellValue::Real(16.0)),
+            ("x REAL DEFAULT ('1.5')", CellValue::Real(1.5)),
+            ("x DEFAULT ('7')", text("7")),
+            ("x BLOB DEFAULT (5.0)", CellValue::Real(5.0)),
+        ] {
+            short_record_case(declaration, vec![value], false);
+        }
     }
 
     /// A STRICT table's ANY column keeps values as they are, so its default isn't turned into a
