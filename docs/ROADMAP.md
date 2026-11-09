@@ -1522,7 +1522,7 @@ Owner: open · Status: in progress
       — claimed: Afloat16, branch bugfix/r3.12-rust-dependency-versions
 - [x] Decode binary plist markers and dictionary keys according to their stored types.
       — claimed: Afloat16, branch bugfix/r3.12-bplist-typed-objects
-- [ ] Swift initialisers of structs, enums, protocols and extensions read `init`. The demangler
+- [x] Swift initialisers of structs, enums, protocols and extensions read `init`. The demangler
       printed every allocating initialiser (`fC`) as `__allocating_init`, a name `swift-demangle`
       keeps for a class's own initialisers, so `_$sSdyS2dcfC` read
       `Swift.Double.__allocating_init(Swift.Double) -> Swift.Double` for

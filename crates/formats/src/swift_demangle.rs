@@ -1141,8 +1141,10 @@ fn render(n: &N, depth: usize) -> String {
             let ty_text = |t: &Option<Box<N>>| t.as_ref().map(|t| func_text(t, labels, d)).unwrap_or_default();
             let body = match kind {
                 EKind::Func => format!("{c}.{}{}", name.clone().unwrap_or_default(), ty_text(ty)),
-                EKind::AllocInit => format!("{c}.__allocating_init{}", ty_text(ty)),
-                EKind::Init => format!("{c}.init{}", ty_text(ty)),
+                // The allocating name is kept for a class's own initialisers only. In a struct, an
+                // enum, a protocol or any extension, even of a class, it reads `init`.
+                EKind::AllocInit if matches!(ctx.as_ref(), N::Nominal { kind: 'C', .. }) => format!("{c}.__allocating_init{}", ty_text(ty)),
+                EKind::AllocInit | EKind::Init => format!("{c}.init{}", ty_text(ty)),
                 EKind::Deinit => format!("{c}.deinit"),
                 EKind::DeallocDeinit => format!("{c}.__deallocating_deinit"),
                 EKind::IvarDestroyer => format!("{c}.__ivar_destroyer"),
