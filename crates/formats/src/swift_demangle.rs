@@ -612,6 +612,16 @@ impl<'a> D<'a> {
         self.push(N::Global { prefix: prefix.into(), inner: Box::new(inner), suffix: String::new() })
     }
 
+    /// `WC`: the case's entity, such as `main.E.one(main.E.Type) -> main.E`, or a type. A module, a
+    /// bare name or another global (a metadata or witness symbol) before it is not a case.
+    fn enum_case(&mut self) -> R<()> {
+        if matches!(self.stack.last(), Some(N::Global { .. })) {
+            return Err("enum case of a global".into());
+        }
+        let inner = self.pop_type()?;
+        self.push(N::Global { prefix: "enum case for".into(), inner: Box::new(inner), suffix: String::new() })
+    }
+
     fn note_param(&mut self, idx: u64) {
         self.max_param = Some(self.max_param.map_or(idx, |m| m.max(idx)));
     }
@@ -824,6 +834,7 @@ impl<'a> D<'a> {
                         self.global(p)
                     }
                     b'L' => self.global("lazy protocol witness table cache variable for"),
+                    b'C' => self.enum_case(),
                     _ => Err("unsupported witness kind".into()),
                 }
             }
