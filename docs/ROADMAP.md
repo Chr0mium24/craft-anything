@@ -1381,7 +1381,7 @@ Owner: open · Status: in progress
       — claimed: Afloat16, branch bugfix/r3.12-binary-padding
 - [x] Keep Mach-O function starts within their declared payload.
       — claimed: Afloat16, branch bugfix/r3.12-macho-function-starts-payload-boundary-20261105
-- [ ] A Mach-O executable's entry point comes from the segment whose file bytes hold its
+- [x] A Mach-O executable's entry point comes from the segment whose file bytes hold its
       `LC_MAIN` offset. A segment with no file bytes, such as a `__DATA` that holds only
       zero-fill sections, records file offset 0 like `__TEXT`, and the entry was placed in that
       segment instead of in `__TEXT` (`/bin/cat` reads 0x100008588 for 0x100000588).
