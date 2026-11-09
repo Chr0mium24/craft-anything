@@ -1429,6 +1429,24 @@ mod tests {
         assert_eq!(text.chars().last(), Some('\u{80E9}'));
     }
 
+    /// Schema text is read whole only while the walk's budget lasts; after that, text is cut at
+    /// the usual cap. Text shown to the reader is cut at the cap on a character boundary.
+    #[test]
+    fn whole_schema_text_stops_when_its_budget_is_spent() {
+        let mut w = RowWalk::new(0);
+        w.text_cap = MAX_SCHEMA_TEXT;
+        w.text_budget = 10;
+        w.keep(Row { rowid: Some(1), values: vec![text("1234"), CellValue::Int(5)] });
+        assert_eq!((w.text_cap, w.text_budget), (MAX_SCHEMA_TEXT, 6));
+        w.keep(Row { rowid: Some(2), values: vec![text("123456")] });
+        assert_eq!((w.text_cap, w.text_budget), (MAX_TEXT, 0));
+        assert_eq!(w.out.len(), 2);
+
+        let mut shown = format!("{}é", "a".repeat(MAX_TEXT - 1));
+        cut_at_max_text(&mut shown);
+        assert_eq!(shown, "a".repeat(MAX_TEXT - 1));
+    }
+
     #[test]
     fn create_table_column_named_key_is_kept() {
         let names = |sql: &str| parse_create_columns(sql).into_iter().map(|c| c.name).collect::<Vec<_>>();
@@ -1928,23 +1946,5 @@ mod tests {
             ),
             vec![false, false, true, true, false, true, false]
         );
-    }
-
-    /// Schema text is read whole only while the walk's budget lasts; after that, text is cut at
-    /// the usual cap. Text shown to the reader is cut at the cap on a character boundary.
-    #[test]
-    fn whole_schema_text_stops_when_its_budget_is_spent() {
-        let mut w = RowWalk::new(0);
-        w.text_cap = MAX_SCHEMA_TEXT;
-        w.text_budget = 10;
-        w.keep(Row { rowid: Some(1), values: vec![text("1234"), CellValue::Int(5)] });
-        assert_eq!((w.text_cap, w.text_budget), (MAX_SCHEMA_TEXT, 6));
-        w.keep(Row { rowid: Some(2), values: vec![text("123456")] });
-        assert_eq!((w.text_cap, w.text_budget), (MAX_TEXT, 0));
-        assert_eq!(w.out.len(), 2);
-
-        let mut shown = format!("{}é", "a".repeat(MAX_TEXT - 1));
-        cut_at_max_text(&mut shown);
-        assert_eq!(shown, "a".repeat(MAX_TEXT - 1));
     }
 }
