@@ -834,6 +834,15 @@ impl<'a> D<'a> {
         Ok(N::Conformance { ty: Box::new(ty), proto: Box::new(proto), module: Box::new(module) })
     }
 
+    /// `Wl` and `WL`: a type and the conformance it is used with. `what` is the thing the symbol
+    /// is, `accessor for` or `cache variable for`.
+    fn lazy_witness_table(&mut self, what: &str) -> R<()> {
+        let conf = self.witness_conformance()?;
+        let ty = self.witness_type()?;
+        let prefix = format!("lazy protocol witness table {what} type {} and conformance", render(&ty, 0));
+        self.push(N::Global { prefix, inner: Box::new(conf), suffix: String::new() })
+    }
+
     fn witness_module(&mut self) -> R<N> {
         match self.pop()? {
             N::Ident(name) => Ok(N::Module(name)),
@@ -1185,7 +1194,7 @@ impl<'a> D<'a> {
                         };
                         self.global(p)
                     }
-                    b'L' => self.global("lazy protocol witness table cache variable for"),
+                    b'L' => self.lazy_witness_table("cache variable for"),
                     b'C' => self.enum_case(),
                     b'I' => {
                         let conf = self.witness_conformance()?;
@@ -1195,12 +1204,7 @@ impl<'a> D<'a> {
                             suffix: String::new(),
                         })
                     }
-                    b'l' => {
-                        let conf = self.witness_conformance()?;
-                        let ty = self.witness_type()?;
-                        let prefix = format!("lazy protocol witness table accessor for type {} and conformance", render(&ty, 0));
-                        self.push(N::Global { prefix, inner: Box::new(conf), suffix: String::new() })
-                    }
+                    b'l' => self.lazy_witness_table("accessor for"),
                     b'b' => {
                         let base = self.witness_type()?;
                         let conf = self.witness_conformance()?;
