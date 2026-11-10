@@ -1836,10 +1836,11 @@ Owner: open · Status: in progress
       `Swift.Double.__allocating_init(Swift.Double) -> Swift.Double` for
       `Swift.Double.init(Swift.Double) -> Swift.Double`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-init-names
-- [ ] Swift operator functions decode. A function named by an operator is written as the
+- [x] Swift operator functions decode. A function named by an operator is written as the
       operator's letters and `oi` (infix), `op` (prefix) or `oP` (postfix), and the demangler
-      reported every one invalid (`unsupported operator 'o'`), so `_$s7XCBuild12ProjectModelO13BuildSettingsV2eeoiySbAE_AEtFZ`
-      should read `static XCBuild.ProjectModel.BuildSettings.== infix(…) -> Swift.Bool`.
+      reported every one invalid (`unsupported operator 'o'`), so `_$s10Foundation4DateV2eeoiySbAC_ACtFZ`
+      now reads `static Foundation.Date.== infix(Foundation.Date, Foundation.Date) -> Swift.Bool`.
+      Private operators, and the witnesses, thunks and descriptors around an operator function, decode too.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-operator-names
 - [x] Swift arguments without a label read `_:` when another argument of the same function,
       initialiser or subscript has one. The demangler printed the bare type, so
