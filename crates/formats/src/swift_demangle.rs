@@ -34,6 +34,8 @@ pub struct Demangled {
 #[derive(Debug, Clone, PartialEq)]
 enum N {
     Ident(String),
+    /// A private declaration's name with its file discriminator, as printed: `(name in _ABC…)`.
+    Private(String),
     Module(String),
     Nominal {
         kind: char,
@@ -207,7 +209,9 @@ impl<'a> D<'a> {
 
     fn pop_type(&mut self) -> R<N> {
         match self.pop()? {
-            N::Ident(_) | N::EmptyList | N::FirstMarker | N::Throws | N::Async | N::Requirement(_) | N::Sig { .. } => Err("expected a type".into()),
+            N::Ident(_) | N::Private(_) | N::EmptyList | N::FirstMarker | N::Throws | N::Async | N::Requirement(_) | N::Sig { .. } => {
+                Err("expected a type".into())
+            }
             N::Module(m) => Err(format!("expected a type, found module {m}")),
             other => Ok(other),
         }
@@ -231,7 +235,8 @@ impl<'a> D<'a> {
     /// One protocol of a protocol list (`…_p`): a context and a name, with no `P` kind letter and
     /// no substitution slot of its own, or a type such as a standard protocol (`SH`).
     fn pop_protocol(&mut self) -> R<N> {
-        if let Some(N::Ident(name)) = self.pop_if(|n| matches!(n, N::Ident(_))) {
+        if matches!(self.stack.last(), Some(N::Ident(_) | N::Private(_))) {
+            let name = self.pop_decl_name()?;
             let ctx = self.pop_context()?;
             return Ok(N::Nominal { kind: 'P', ctx: Box::new(ctx), name });
         }
@@ -433,7 +438,9 @@ impl<'a> D<'a> {
     fn pop_params(&mut self) -> R<N> {
         match self.pop()? {
             N::EmptyList => Ok(N::Tuple(Vec::new())),
-            N::Ident(_) | N::FirstMarker | N::Throws | N::Async | N::Requirement(_) | N::Sig { .. } | N::Module(_) => Err("expected parameter types".into()),
+            N::Ident(_) | N::Private(_) | N::FirstMarker | N::Throws | N::Async | N::Requirement(_) | N::Sig { .. } | N::Module(_) => {
+                Err("expected parameter types".into())
+            }
             other => Ok(other),
         }
     }
@@ -495,7 +502,7 @@ impl<'a> D<'a> {
     fn shape_ok(&self, top_func: bool, need_name: bool) -> bool {
         let st = &self.stack;
         let at = |i: usize| i.checked_sub(1).and_then(|j| st.get(j));
-        let typeish = |n: Option<&N>| matches!(n, Some(n) if !matches!(n, N::Ident(_) | N::FirstMarker | N::Throws | N::Async | N::Requirement(_) | N::Sig { .. } | N::Module(_)));
+        let typeish = |n: Option<&N>| matches!(n, Some(n) if !matches!(n, N::Ident(_) | N::Private(_) | N::FirstMarker | N::Throws | N::Async | N::Requirement(_) | N::Sig { .. } | N::Module(_)));
         let mut i = st.len();
         if matches!(at(i), Some(N::Sig { .. })) {
             i -= 1;
@@ -539,7 +546,7 @@ impl<'a> D<'a> {
             }
         }
         if need_name {
-            if !matches!(at(i), Some(N::Ident(_))) {
+            if !matches!(at(i), Some(N::Ident(_) | N::Private(_))) {
                 return false;
             }
             i -= 1;
@@ -597,7 +604,7 @@ impl<'a> D<'a> {
         let module = self.pop_context()?;
         let proto = match self.pop()? {
             n @ N::Nominal { kind: 'P', .. } => n,
-            N::Ident(name) => {
+            N::Ident(name) | N::Private(name) => {
                 let ctx = self.pop_context()?;
                 N::Nominal { kind: 'P', ctx: Box::new(ctx), name }
             }
@@ -624,6 +631,22 @@ impl<'a> D<'a> {
 
     fn note_param(&mut self, idx: u64) {
         self.max_param = Some(self.max_param.map_or(idx, |m| m.max(idx)));
+    }
+
+    /// The name of a declaration: an identifier, or a private name built by `LL`.
+    fn pop_decl_name(&mut self) -> R<String> {
+        match self.pop()? {
+            N::Ident(i) | N::Private(i) => Ok(i),
+            _ => Err("expected a name".into()),
+        }
+    }
+
+    /// `LL`: a private declaration's name, then the discriminator of the file that declares it.
+    /// Both are identifiers and keep their substitution slots; the pair takes none of its own.
+    fn private_name(&mut self) -> R<()> {
+        let discriminator = self.pop_name()?;
+        let name = self.pop_name()?;
+        self.push(N::Private(format!("({name} in {discriminator})")))
     }
 
     fn operator(&mut self) -> R<()> {
@@ -659,7 +682,7 @@ impl<'a> D<'a> {
                 self.push(N::Builtin(t))
             }
             b'C' | b'V' | b'O' | b'P' | b'a' => {
-                let name = self.pop_name()?;
+                let name = self.pop_decl_name()?;
                 let ctx = self.pop_context()?;
                 let n = N::Nominal { kind: char::from(c), ctx: Box::new(ctx), name };
                 self.add_sub(&n)?;
@@ -679,7 +702,7 @@ impl<'a> D<'a> {
             b'F' => {
                 let ty = self.pop_entity_type(true)?;
                 let labels = self.pop_labels(Self::param_count(&ty))?;
-                let name = self.pop_name()?;
+                let name = self.pop_decl_name()?;
                 let ctx = self.pop_context()?;
                 self.push(N::Entity {
                     kind: EKind::Func,
@@ -709,6 +732,10 @@ impl<'a> D<'a> {
                 self.push(n)
             }
             b'K' => self.push(N::Throws),
+            b'L' => match self.next()? {
+                b'L' => self.private_name(),
+                k => Err(format!("unsupported operator 'L{}'", char::from(k))),
+            },
             b'M' => {
                 let p = match self.next()? {
                     b'a' => "type metadata accessor for",
@@ -731,9 +758,9 @@ impl<'a> D<'a> {
                     _ => return Err("unsupported metadata kind".into()),
                 };
                 if p.starts_with("protocol descriptor")
-                    && let Some(N::Ident(_)) = self.stack.last()
+                    && let Some(N::Ident(_) | N::Private(_)) = self.stack.last()
                 {
-                    let name = self.pop_name()?;
+                    let name = self.pop_decl_name()?;
                     let ctx = self.pop_context()?;
                     let proto = N::Nominal { kind: 'P', ctx: Box::new(ctx), name };
                     return self.push(N::Global { prefix: p.into(), inner: Box::new(proto), suffix: String::new() });
@@ -995,7 +1022,7 @@ impl<'a> D<'a> {
             }
             b'v' => {
                 let ty = self.pop_type()?;
-                let name = self.pop_name()?;
+                let name = self.pop_decl_name()?;
                 let ctx = self.pop_context()?;
                 let accessor = self.accessor()?;
                 self.push(N::Entity {
@@ -1149,7 +1176,7 @@ fn render(n: &N, depth: usize) -> String {
     }
     let d = depth + 1;
     match n {
-        N::Ident(s) | N::Module(s) | N::Builtin(s) => s.clone(),
+        N::Ident(s) | N::Private(s) | N::Module(s) | N::Builtin(s) => s.clone(),
         N::Nominal { .. } | N::Extension { .. } => path(n, d),
         N::Bound { base, args } => {
             let b = path(base, d);
