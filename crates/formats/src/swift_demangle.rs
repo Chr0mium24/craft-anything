@@ -868,6 +868,32 @@ impl<'a> D<'a> {
         self.push(N::Global { prefix, inner: Box::new(conf), suffix: String::new() })
     }
 
+    /// `WO` and a letter: an outlined value operation, a copy, move or destroy the compiler
+    /// spelled out inline for one type, such as `outlined destroy of main.S`. The operand is the
+    /// whole type before it. `i` and `j` take an index after the letter, which is not printed.
+    fn outlined_op(&mut self) -> R<()> {
+        let (phrase, indexed) = match self.next()? {
+            b'h' => ("destroy", false),
+            b'c' => ("init with copy", false),
+            b'e' => ("consume", false),
+            b'y' => ("copy", false),
+            b'b' => ("init with take", false),
+            b'd' => ("assign with take", false),
+            b'f' => ("assign with copy", false),
+            b'g' => ("enum get tag", false),
+            b's' => ("release", false),
+            b'r' => ("retain", false),
+            b'i' => ("enum tag store", true),
+            b'j' => ("enum project data for load", true),
+            _ => return Err("unsupported outlined operation kind".into()),
+        };
+        if indexed {
+            self.index()?;
+        }
+        let ty = self.witness_type()?;
+        self.push(N::Global { prefix: format!("outlined {phrase} of"), inner: Box::new(ty), suffix: String::new() })
+    }
+
     fn note_param(&mut self, idx: u64) {
         self.max_param = Some(self.max_param.map_or(idx, |m| m.max(idx)));
     }
@@ -1208,6 +1234,7 @@ impl<'a> D<'a> {
                         self.push(N::Global { prefix, inner: Box::new(conf), suffix: String::new() })
                     }
                     b'T' => self.associated_type_witness_accessor(),
+                    b'O' => self.outlined_op(),
                     _ => Err("unsupported witness kind".into()),
                 }
             }

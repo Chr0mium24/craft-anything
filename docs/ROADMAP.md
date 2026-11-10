@@ -1826,7 +1826,7 @@ Owner: open · Status: in progress
       `_$s10DVTIconKit12_isDebugging33_8F51EEEBC836B21F9ED44F4C6D38A8CBLLSbvp` is
       `DVTIconKit.(_isDebugging in _8F51EEEBC836B21F9ED44F4C6D38A8CB) : Swift.Bool`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-private-names
-- [ ] Swift symbols decode outlined value operations. The demangler reported every `WO` and a letter
+- [x] Swift symbols decode outlined value operations. The demangler reported every `WO` and a letter
       (`WOh`, `WOc`, `WOi0_`) as "unsupported witness kind", so `_$s10ACPToolLib11ResetSchemaVWOh`
       should read "outlined destroy of ACPToolLib.ResetSchema", as `swift-demangle` prints it.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-outlined-ops
