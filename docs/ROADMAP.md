@@ -1810,6 +1810,11 @@ Owner: open · Status: in progress
       existential of a protocol named this way was reported invalid ("expected a type"):
       `_$sSS6encode2toys7Encoder_p_tKF` is `Swift.String.encode(to: Swift.Encoder) throws -> ()`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-existentials
+- [ ] Swift function type attributes decode. Besides `Ya` (async), a function type can carry `Yb`
+      (`@Sendable`), `Yc` (a global actor, with its type), `YA` (`@isolated(any)`) and `YK` (the
+      error type of `throws(E)`), but the demangler read only `Ya` and reported the rest invalid
+      ("unsupported function attribute"): `_$s1x2v1yyYbcvp` is `x.v1 : @Sendable () -> ()`.
+      — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-function-attributes
 - [x] Swift value witness symbols decode. A symbol ending `w` and two letters is one of the
       functions the runtime calls to copy, move, destroy or read the enum tag of a value of a
       type, but the demangler had no `w` operator and reported it invalid ("unsupported operator
