@@ -1834,7 +1834,7 @@ Owner: open · Status: in progress
       `Foundation.__DataStorage.append(Swift.UnsafeRawPointer, length: Swift.Int) -> ()` where
       `swift-demangle` prints `append(_: Swift.UnsafeRawPointer, length: Swift.Int) -> ()`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-unlabeled-args
-- [ ] Swift witness table accessors decode. The demangler read `Wl`, `Wb`, `WT` and `WI` as unknown
+- [x] Swift witness table accessors decode. The demangler read `Wl`, `Wb`, `WT` and `WI` as unknown
       witness kinds and reported them invalid ("unsupported witness kind"):
       `_$s7SwiftUI4EdgeO3SetVAESQAAWl` is `lazy protocol witness table accessor for type
       SwiftUI.Edge.Set and conformance SwiftUI.Edge.Set : Swift.Equatable in SwiftUI`.
