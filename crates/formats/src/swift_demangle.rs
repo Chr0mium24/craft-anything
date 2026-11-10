@@ -1068,26 +1068,26 @@ fn path(n: &N, depth: usize) -> String {
     }
 }
 
+/// The argument list of a function type, with `labels`, an entity's argument labels, one per
+/// argument. If at least one argument has a label, the others read `_:`, as in
+/// `append(_: Swift.UnsafeRawPointer, length: Swift.Int)`; if none has, all print bare. A single
+/// argument that isn't wrapped in a tuple prints bare whatever its label says.
 fn params_text(p: &N, labels: &[Option<String>], depth: usize) -> String {
+    let any_label = labels.iter().any(Option::is_some);
     let items: Vec<String> = match p {
         N::Tuple(t) => t
             .iter()
             .enumerate()
-            .map(|(i, (l, ty))| {
-                let label = labels.get(i).cloned().flatten().or_else(|| l.clone());
-                match label {
-                    Some(l) => format!("{l}: {}", render(ty, depth + 1)),
-                    None => render(ty, depth + 1),
+            .map(|(i, (own, ty))| {
+                let ty = render(ty, depth + 1);
+                match labels.get(i).cloned().flatten().or_else(|| own.clone()) {
+                    Some(l) => format!("{l}: {ty}"),
+                    None if any_label => format!("_: {ty}"),
+                    None => ty,
                 }
             })
             .collect(),
-        other => {
-            let t = render(other, depth + 1);
-            match labels.first().cloned().flatten() {
-                Some(l) => vec![format!("{l}: {t}")],
-                None => vec![t],
-            }
-        }
+        other => vec![render(other, depth + 1)],
     };
     format!("({})", items.join(", "))
 }

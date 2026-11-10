@@ -1700,7 +1700,7 @@ Owner: open · Status: in progress
       `Swift.Double.__allocating_init(Swift.Double) -> Swift.Double` for
       `Swift.Double.init(Swift.Double) -> Swift.Double`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-init-names
-- [ ] Swift arguments without a label read `_:` when another argument of the same function,
+- [x] Swift arguments without a label read `_:` when another argument of the same function,
       initialiser or subscript has one. The demangler printed the bare type, so
       `_$s10Foundation13__DataStorageC6append_6lengthySV_SitF` read
       `Foundation.__DataStorage.append(Swift.UnsafeRawPointer, length: Swift.Int) -> ()` where
