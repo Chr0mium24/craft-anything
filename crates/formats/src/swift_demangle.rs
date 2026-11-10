@@ -657,6 +657,14 @@ impl<'a> D<'a> {
         self.push(N::Global { prefix: prefix.into(), inner: Box::new(inner), suffix: String::new() })
     }
 
+    /// `Tu`, `TY` and `TQ`: the async function pointer, or the suspend or await resume function,
+    /// of the function before it. The operand is a function, a type or another global (a thunk of
+    /// a thunk is allowed); a bare name, a marker or a module is not.
+    fn async_thunk(&mut self, prefix: String) -> R<()> {
+        let inner = self.pop_type()?;
+        self.push(N::Global { prefix, inner: Box::new(inner), suffix: String::new() })
+    }
+
     /// `WC`: the case's entity, such as `main.E.one(main.E.Type) -> main.E`, or a type. A module, a
     /// bare name or another global (a metadata or witness symbol) before it is not a case.
     fn enum_case(&mut self) -> R<()> {
@@ -873,6 +881,16 @@ impl<'a> D<'a> {
                         let from = self.pop_type()?;
                         let text = format!("reabstraction thunk helper from {} to {}", render(&from, 0), render(&to, 0));
                         return self.push(N::Global { prefix: text, inner: Box::new(N::EmptyList), suffix: String::new() });
+                    }
+                    b'u' => return self.async_thunk("async function pointer to".into()),
+                    b'Y' | b'Q' => {
+                        // `swift-demangle` stops reading a number above 2^31 - 1.
+                        let i = self.index()?;
+                        if i > 1 << 31 {
+                            return Err("resume index too large".into());
+                        }
+                        let phrase = if k == b'Y' { "suspend resume" } else { "await resume" };
+                        return self.async_thunk(format!("({i}) {phrase} partial function for"));
                     }
                     _ => return Err("unsupported thunk or specialization".into()),
                 };

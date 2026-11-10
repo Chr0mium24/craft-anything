@@ -2043,7 +2043,7 @@ Owner: open · Status: in progress
       operator, so every addressor was reported invalid: `_$s5Books19PAGETURNLOG_ENABLEDSbvau` is
       `Books.PAGETURNLOG_ENABLED.unsafeMutableAddressor : Swift.Bool`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-addressors
-- [ ] Swift async thunks decode. `Tu` is the async function pointer of the function before it, and
+- [x] Swift async thunks decode. `Tu` is the async function pointer of the function before it, and
       `TY` and `TQ` with an index are its suspend and await resume functions, but the demangler
       reported all three as an unsupported thunk, so `_$s10XCTestCore5QueueC11synchronizeyyYaFTY0_`
       is `(1) suspend resume partial function for XCTestCore.Queue.synchronize() async -> ()`.
