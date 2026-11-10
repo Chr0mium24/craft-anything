@@ -1822,6 +1822,11 @@ Owner: open · Status: in progress
       and `Equatable` conformance descriptors and witness tables (`…SQAAMc`, `…SQsWP`) were
       reported invalid ("expected a protocol").
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-equatable
+- [ ] Swift symbols spell the concurrency types as `Sc` and a letter. The demangler reported all of
+      them invalid ("concurrency standard types are not supported"), so `_$sScAMp` should read
+      "protocol descriptor for Swift.Actor" and `ScT`, `ScG`, `ScS` and the rest their own types,
+      with an unknown letter after `Sc` still invalid.
+      — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-concurrency-types
 - [x] Swift symbols name the type metadata singleton initialization cache. The demangler read
       `Ml` with the name of `ML`, so `_$s10RealityKit30__RKEntityTriggerSpecificationOMl` read
       "lazy cache variable for type metadata for RealityKit.__RKEntityTriggerSpecification" where
