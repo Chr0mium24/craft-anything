@@ -1669,6 +1669,11 @@ Owner: open · Status: in progress
       existential of a protocol named this way was reported invalid ("expected a type"):
       `_$sSS6encode2toys7Encoder_p_tKF` is `Swift.String.encode(to: Swift.Encoder) throws -> ()`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-existentials
+- [ ] Swift value witness symbols decode. A symbol ending `w` and two letters is one of the
+      functions the runtime calls to copy, move, destroy or read the enum tag of a value of a
+      type, but the demangler had no `w` operator and reported it invalid ("unsupported operator
+      'w'"): `_$ss6ResultOwug` is `getEnumTag value witness for Swift.Result`.
+      — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-value-witnesses
 - [x] Swift enum case symbols decode. A symbol ending `WC` is the function that builds an enum
       case, but the demangler read `WC` as an unknown witness kind and reported it invalid
       ("unsupported witness kind"): `_$s10FindMyBase3BitO3oneyA2CmFWC` is
