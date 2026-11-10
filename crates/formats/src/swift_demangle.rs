@@ -1465,7 +1465,7 @@ fn weight(n: &N, depth: usize) -> usize {
         N::Tuple(t) => t.iter().fold(0usize, |a, (_, x)| a.saturating_add(weight(x, d))),
         N::Func { params, result, attrs } => {
             let w = weight(params, d).saturating_add(weight(result, d));
-            w.saturating_add(attrs.actor.iter().chain(typed_throws(&attrs.throws)).fold(0usize, |a, x| a.saturating_add(weight(x, d))))
+            w.saturating_add(attrs.actor.as_deref().into_iter().chain(typed_throws(&attrs.throws)).fold(0usize, |a, x| a.saturating_add(weight(x, d))))
         }
         N::FnMarker(FnMarker::Actor(x) | FnMarker::Thrown(x)) => weight(x, d),
         N::Metatype(x) | N::ExistentialMetatype(x) | N::ReprMetatype(x) | N::Inout(x) => weight(x, d),
@@ -1542,7 +1542,8 @@ fn max_param(n: &N, depth: usize) -> u64 {
         N::Param(_, i) => *i,
         N::Func { params, result, attrs } => attrs
             .actor
-            .iter()
+            .as_deref()
+            .into_iter()
             .chain(typed_throws(&attrs.throws))
             .map(|x| max_param(x, depth + 1))
             .fold(max_param(params, depth + 1).max(max_param(result, depth + 1)), u64::max),
@@ -1557,7 +1558,7 @@ fn max_param(n: &N, depth: usize) -> u64 {
     }
 }
 
-fn typed_throws(t: &Throws) -> Option<&Box<N>> {
+fn typed_throws(t: &Throws) -> Option<&N> {
     match t {
         Throws::Typed(e) => Some(e),
         _ => None,
