@@ -2148,6 +2148,12 @@ Owner: open · Status: in progress
       `Foundation.Data.InlineData.subscript(Swift.Int) -> Swift.UInt8.modify` where `swift-demangle`
       prints `Foundation.Data.InlineData.subscript.modify : (Swift.Int) -> Swift.UInt8`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-subscript-accessors
+- [ ] Swift key path accessors decode. The getter and setter of a key path (`TK` and `Tk`) after a
+      property descriptor and the type the path starts from were reported as an unsupported thunk, so
+      `_$s10DVTIconKit18GeneratedIconImageC14drawingContextAA0cd7DrawingG0CSgvpACTk` is
+      `key path setter for DVTIconKit.GeneratedIconImage.drawingContext : DVTIconKit.GeneratedIconDrawingContext? : DVTIconKit.GeneratedIconImage`
+      in `swift-demangle`.
+      — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-keypath-thunks
 - [x] Swift reflection, metadata-cache and Objective-C class symbols decode. The demangler stopped
       at `M` followed by `K`, `D`, `F`, `A`, `P`, `B`, `U`, `t` or `s` and reported the symbol
       invalid ("unsupported metadata kind"); about 206,000 symbols in macOS 15.7 and Xcode 26 system
