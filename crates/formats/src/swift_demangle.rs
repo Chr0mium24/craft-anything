@@ -788,6 +788,24 @@ impl<'a> D<'a> {
         self.push(N::Global { prefix: prefix.into(), inner: Box::new(inner), suffix: String::new() })
     }
 
+    /// `TK` and `Tk`: the getter or the setter of a key path. The operand under the base is the
+    /// property or subscript it reads, such as a property descriptor `vp` or `vpZ` or a subscript
+    /// `ip`, and the base is the type the path starts from. A global, a module or a name in either
+    /// place is not one, and `swift-demangle` rejects those too.
+    fn key_path_accessor(&mut self, getter: bool) -> R<()> {
+        if matches!(self.stack.last(), Some(N::Global { .. } | N::Entity { .. } | N::Conformance { .. } | N::Extension { .. })) {
+            return Err("key path base is not a type".into());
+        }
+        let base = self.pop_type()?;
+        let entity = match self.pop()? {
+            e @ N::Entity { .. } => e,
+            _ => return Err("key path of a non-entity".into()),
+        };
+        let phrase = if getter { "key path getter for" } else { "key path setter for" };
+        let text = format!("{phrase} {} : {}", render(&entity, 0), render(&base, 0));
+        self.push(N::Global { prefix: text, inner: Box::new(N::EmptyList), suffix: String::new() })
+    }
+
     /// `Tu`, `TY` and `TQ`: the async function pointer, or the suspend or await resume function,
     /// of the function before it. The operand is a function, a type or another global (a thunk of
     /// a thunk is allowed); a bare name, a marker or a module is not.
@@ -1143,6 +1161,7 @@ impl<'a> D<'a> {
             b'T' => {
                 let k = self.next()?;
                 let prefix = match k {
+                    b'K' | b'k' => return self.key_path_accessor(k == b'K'),
                     b'o' => "@objc",
                     b'O' => "@nonobjc",
                     b'q' => "method descriptor for",
