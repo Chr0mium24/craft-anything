@@ -1893,6 +1893,12 @@ Owner: open · Status: in progress
       operator, so every addressor was reported invalid: `_$s5Books19PAGETURNLOG_ENABLEDSbvau` is
       `Books.PAGETURNLOG_ENABLED.unsafeMutableAddressor : Swift.Bool`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-addressors
+- [ ] Swift subscript accessors print the accessor after `subscript` and the type after a colon,
+      as `swift-demangle` does. The demangler put the accessor last, so
+      `_$s10Foundation4DataV06InlineB0Vys5UInt8VSiciM` read
+      `Foundation.Data.InlineData.subscript(Swift.Int) -> Swift.UInt8.modify` where `swift-demangle`
+      prints `Foundation.Data.InlineData.subscript.modify : (Swift.Int) -> Swift.UInt8`.
+      — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-subscript-accessors
 - [x] Name the glyph weight (26) and glyph size (27) key attributes of asset catalogs, which hold
       SF Symbol style images; they're listed as `attribute-26` and `attribute-27` today.
       — claimed: Chr0mium24, branch bugfix/r3.12-car-glyph-attributes
