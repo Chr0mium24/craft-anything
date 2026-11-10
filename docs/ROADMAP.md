@@ -2137,6 +2137,11 @@ Owner: open · Status: in progress
       operator, so every addressor was reported invalid: `_$s5Books19PAGETURNLOG_ENABLEDSbvau` is
       `Books.PAGETURNLOG_ENABLED.unsafeMutableAddressor : Swift.Bool`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-addressors
+- [ ] Swift outlined variables decode. `Tv` with an optional index names the outlined variable of the
+      symbol before it (a function, a protocol witness, or a global), but the demangler reported every
+      one as an unsupported thunk, so `_$s013CompilerSwiftA21PluginMessageHandling0C7FeatureO8rawValueACSgSS_tcfCTv_`
+      is `outlined variable #0 of CompilerSwiftCompilerPluginMessageHandling.PluginFeature.init(rawValue: Swift.String) -> CompilerSwiftCompilerPluginMessageHandling.PluginFeature?`.
+      — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-outlined-variable
 - [x] Swift async thunks decode. `Tu` is the async function pointer of the function before it, and
       `TY` and `TQ` with an index are its suspend and await resume functions, but the demangler
       reported all three as an unsupported thunk, so `_$s10XCTestCore5QueueC11synchronizeyyYaFTY0_`
