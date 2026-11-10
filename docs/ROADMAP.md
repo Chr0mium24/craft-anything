@@ -2037,7 +2037,7 @@ Owner: open · Status: in progress
       `Foundation.Data.InlineData.subscript(Swift.Int) -> Swift.UInt8.modify` where `swift-demangle`
       prints `Foundation.Data.InlineData.subscript.modify : (Swift.Int) -> Swift.UInt8`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-subscript-accessors
-- [ ] Swift reflection, metadata-cache and Objective-C class symbols decode. The demangler stopped
+- [x] Swift reflection, metadata-cache and Objective-C class symbols decode. The demangler stopped
       at `M` followed by `K`, `D`, `F`, `A`, `P`, `B`, `U`, `t` or `s` and reported the symbol
       invalid ("unsupported metadata kind"); about 206,000 symbols in macOS 15.7 and Xcode 26 system
       binaries were affected. `_$s7Testing3TagVSeAAMcMK` is `metadata instantiation cache for

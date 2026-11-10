@@ -775,7 +775,8 @@ impl<'a> D<'a> {
                 k => Err(format!("unsupported operator 'L{}'", char::from(k))),
             },
             b'M' => {
-                let p = match self.next()? {
+                let kind = self.next()?;
+                let p = match kind {
                     b'a' => "type metadata accessor for",
                     b'n' => "nominal type descriptor for",
                     b'N' => "type metadata for",
@@ -794,8 +795,29 @@ impl<'a> D<'a> {
                     b'j' => "module descriptor",
                     b'X' => "extension descriptor for",
                     b'z' => "type metadata heap reference for",
+                    b'K' => "metadata instantiation cache for",
+                    b'D' => "demangling cache variable for type metadata for",
+                    b'F' => "reflection metadata field descriptor",
+                    b'A' => "reflection metadata associated type descriptor",
+                    b'P' => "generic type metadata pattern for",
+                    b'B' => "reflection metadata builtin descriptor",
+                    b'U' => "ObjC metadata update function for",
+                    b't' => "full ObjC resilient class stub for",
+                    b's' => "ObjC resilient class stub for",
                     _ => return Err("unsupported metadata kind".into()),
                 };
+                // These describe one type, so the operand must be a whole type, as for a value
+                // witness: a module, a function, a conformance or another global is not one.
+                if matches!(kind, b'D' | b'F' | b'P' | b'B' | b'U' | b't' | b's') {
+                    if matches!(self.stack.last(), Some(N::Global { .. } | N::Entity { .. } | N::Conformance { .. } | N::Extension { .. })) {
+                        return Err("metadata of a non-type".into());
+                    }
+                    let ty = self.pop_type()?;
+                    return self.push(N::Global { prefix: p.into(), inner: Box::new(ty), suffix: String::new() });
+                }
+                if kind == b'K' && matches!(self.stack.last(), Some(N::FirstMarker | N::EmptyList | N::Throws | N::Async | N::Requirement(_) | N::Sig { .. })) {
+                    return Err("metadata cache of a marker".into());
+                }
                 if p.starts_with("protocol descriptor")
                     && let Some(N::Ident(_) | N::Private(_)) = self.stack.last()
                 {
@@ -804,8 +826,15 @@ impl<'a> D<'a> {
                     let proto = N::Nominal { kind: 'P', ctx: Box::new(ctx), name };
                     return self.push(N::Global { prefix: p.into(), inner: Box::new(proto), suffix: String::new() });
                 }
-                if p.starts_with("protocol conformance") {
+                if p.starts_with("protocol conformance") || kind == b'A' {
                     let conf = self.conformance()?;
+                    if kind == b'A'
+                        && let N::Conformance { ty, module, .. } = &conf
+                        && (!matches!(**module, N::Module(_))
+                            || matches!(**ty, N::Global { .. } | N::Entity { .. } | N::Conformance { .. } | N::Extension { .. }))
+                    {
+                        return Err("associated type descriptor of a non-type or outside a module".into());
+                    }
                     return self.push(N::Global { prefix: p.into(), inner: Box::new(conf), suffix: String::new() });
                 }
                 self.global(p)
