@@ -2034,7 +2034,7 @@ Owner: open · Status: in progress
       prints `(() -> Swift.Int)?`. An optional protocol composition read `main.P & main.Q?` for
       `(main.P & main.Q)?`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-optional-functions
-- [ ] Swift special types decode. A type written with `X` and a kind letter (a non-escaping
+- [x] Swift special types decode. A type written with `X` and a kind letter (a non-escaping
       closure `XE`, an `AnyObject` or class-and-protocol existential, a protocol metatype, a
       `@convention` or `@autoclosure` function, `Self`, a `weak` or `unowned` type) was reported
       invalid ("unsupported special type"): `_$s13IDEConsoleKit0A5ThemeC22infoTypeThumbnailImageSo7NSImageCvgAFyXEfU_`
