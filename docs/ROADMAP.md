@@ -1866,6 +1866,11 @@ Owner: open · Status: in progress
       "lazy cache variable for type metadata for RealityKit.__RKEntityTriggerSpecification" where
       `swift-demangle` prints `type metadata singleton initialization cache for …`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-singleton-cache
+- [ ] Swift one-time initialization symbols name the variable. `WZ` and `Wz` were invalid; they now
+      read "one-time initialization function for" and "one-time initialization token for" followed
+      by the variable's name, as `swift-demangle` prints them. For example
+      `_$s10ACPToolLib11RemoveTokenV13configuration_WZ` reads "one-time initialization function for configuration".
+      — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-once-init
 - [x] Require a complete Cargo package version before a registry or vendor path becomes Rust dependency evidence.
       — claimed: Afloat16, branch bugfix/r3.12-rust-dependency-versions
 - [x] Swift symbols name the right generic parameter in an associated type. `Qy` numbers its
