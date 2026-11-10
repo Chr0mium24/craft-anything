@@ -86,6 +86,15 @@ enum N {
         name: String,
     },
     Inout(Box<N>),
+    /// The opaque result type of the declaration being mangled (`some P`), printed as `some`.
+    Opaque,
+    /// The declaration that returns opaque types (`QO`), printed `<<opaque return type of …>>`.
+    OpaqueDecl(Box<N>),
+    /// One of that declaration's opaque types, by position (`Qo`), printed with `.N` after it.
+    OpaqueRef {
+        decl: Box<N>,
+        index: u64,
+    },
     Builtin(String),
     EmptyList,
     FirstMarker,
@@ -1103,6 +1112,46 @@ impl<'a> D<'a> {
                     self.add_sub(&n)?;
                     self.push(n)
                 }
+                b'r' => self.push(N::Opaque),
+                b'R' => {
+                    // The position among the declaration's opaque result types; every one prints
+                    // as plain `some`.
+                    self.index()?;
+                    self.push(N::Opaque)
+                }
+                b'O' => match self.pop()? {
+                    d @ N::Entity { .. } => self.push(N::OpaqueDecl(Box::new(d))),
+                    _ => Err("opaque types of a non-declaration".into()),
+                },
+                b'o' => {
+                    let index = self.index()?;
+                    // The generic arguments the declaration was used with: types, after the `y`
+                    // that opens the list. They are checked but not printed.
+                    let mut count = 0;
+                    loop {
+                        if self.pop_if(|n| matches!(n, N::EmptyList)).is_some() {
+                            break;
+                        }
+                        count += 1;
+                        if count > 64 {
+                            return Err("too many generic arguments".into());
+                        }
+                        if self.pop_if(|n| matches!(n, N::FirstMarker)).is_none() {
+                            self.pop_type()?;
+                        }
+                    }
+                    match self.pop()? {
+                        N::OpaqueDecl(decl) => {
+                            let n = N::OpaqueRef { decl, index };
+                            // The slot keeps a copy of the whole declaration, so it is paid for like
+                            // any other copy out of a substitution.
+                            self.budget = self.budget.checked_sub(weight(&n, 0)).ok_or("symbol expands too much")?;
+                            self.add_sub(&n)?;
+                            self.push(n)
+                        }
+                        _ => Err("opaque type without its declaration".into()),
+                    }
+                }
                 _ => Err("unsupported associated type".into()),
             },
             b'R' => {
@@ -1395,7 +1444,8 @@ fn weight(n: &N, depth: usize) -> usize {
         N::Bound { base, args } => args.iter().fold(weight(base, d), |a, x| a.saturating_add(weight(x, d))),
         N::Tuple(t) => t.iter().fold(0usize, |a, (_, x)| a.saturating_add(weight(x, d))),
         N::Func { params, result, .. } => weight(params, d).saturating_add(weight(result, d)),
-        N::Metatype(x) | N::ExistentialMetatype(x) | N::ReprMetatype(x) | N::Inout(x) => weight(x, d),
+        N::Metatype(x) | N::ExistentialMetatype(x) | N::ReprMetatype(x) | N::Inout(x) | N::OpaqueDecl(x) => weight(x, d),
+        N::OpaqueRef { decl, .. } => weight(decl, d),
         N::Attributed { inner, .. } => weight(inner, d),
         N::ClassBound { class, protos } => protos.iter().fold(weight(class, d), |a, x| a.saturating_add(weight(x, d))),
         N::Member { base, .. } => weight(base, d),
@@ -1502,7 +1552,7 @@ fn func_text(ty: &N, labels: &[Option<String>], depth: usize) -> String {
 fn optional_operand(t: &N, depth: usize) -> String {
     let text = render(t, depth);
     match t {
-        N::Func { .. } | N::ClassBound { .. } | N::Attributed { wrapped: true, .. } => format!("({text})"),
+        N::Func { .. } | N::ClassBound { .. } | N::Attributed { wrapped: true, .. } | N::Opaque | N::OpaqueRef { .. } => format!("({text})"),
         N::Existential(protos) if protos.len() > 1 => format!("({text})"),
         _ => text,
     }
@@ -1537,6 +1587,7 @@ fn render(n: &N, depth: usize) -> String {
         }
         N::Tuple(t) => params_text(&N::Tuple(t.clone()), &[], d),
         N::Func { .. } | N::Generic { .. } => func_text(n, &[], d),
+        N::Metatype(t) if matches!(**t, N::Opaque | N::OpaqueRef { .. }) => format!("({}).Type", render(t, d)),
         N::Metatype(t) => format!("{}.Type", render(t, d)),
         N::ExistentialMetatype(t) => format!("{}.Type", render(t, d)),
         N::ReprMetatype(t) => {
@@ -1565,6 +1616,9 @@ fn render(n: &N, depth: usize) -> String {
         N::Param(dp, i) => param_name(*dp, *i),
         N::Member { base, name } => format!("{}.{name}", render(base, d)),
         N::Inout(t) => format!("inout {}", render(t, d)),
+        N::Opaque => "some".into(),
+        N::OpaqueDecl(decl) => format!("<<opaque return type of {}>>", render(decl, d)),
+        N::OpaqueRef { decl, index } => format!("<<opaque return type of {}>>.{index}", render(decl, d)),
         N::EmptyList | N::FirstMarker | N::Throws | N::Async => String::new(),
         N::Requirement(r) => r.clone(),
         N::Sig { .. } => sig_text(n, 0),
