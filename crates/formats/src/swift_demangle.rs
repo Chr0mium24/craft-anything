@@ -481,6 +481,85 @@ impl<'a> D<'a> {
         Ok(N::Func { params: Box::new(params), result: Box::new(result), throws, is_async })
     }
 
+    /// The protocols of an existential, nothing for `Any`, or a list whose first entry
+    /// is followed by a `_` marker, as for a tuple. Shared by `p` and the `X` types built on it.
+    fn protocol_list(&mut self) -> R<Vec<N>> {
+        let mut protos = Vec::new();
+        if self.pop_if(|n| matches!(n, N::EmptyList)).is_none() {
+            loop {
+                if protos.len() > 32 {
+                    return Err("too many protocols".into());
+                }
+                let first = self.pop_if(|n| matches!(n, N::FirstMarker)).is_some();
+                protos.push(self.pop_protocol()?);
+                if first {
+                    break;
+                }
+            }
+            protos.reverse();
+        }
+        Ok(protos)
+    }
+
+    /// The function type of `XE` and its relatives: the parameters and the result, then at most one
+    /// `throws` marker and one `async` marker, in that order from the top of the stack. `attr` is the
+    /// word printed before the type, if any.
+    fn special_func(&mut self, attr: &'static str) -> R<N> {
+        let throws = self.pop_if(|n| matches!(n, N::Throws)).is_some();
+        let is_async = self.pop_if(|n| matches!(n, N::Async)).is_some();
+        let params = self.pop_params()?;
+        let result = self.pop_params()?;
+        let f = N::Func { params: Box::new(params), result: Box::new(result), throws, is_async };
+        Ok(if attr.is_empty() { f } else { N::Attributed { text: attr, inner: Box::new(f), wrapped: true } })
+    }
+
+    /// `X` and a kind letter. The function kinds take parameters and a result like `c` does and
+    /// print an attribute before them: `E` none, `K` and `A` `@autoclosure`, `C` `@convention(c)`,
+    /// `B` `@convention(block)`, `f` `@convention(thin)`. `l` is `AnyObject` after a protocol list,
+    /// `c` a class and a protocol list, `p` the metatype of a protocol, `D` the dynamic `Self`, `w`
+    /// `o` `u` the ownership of a type, and `M` / `m` a metatype followed by its representation.
+    fn special_type(&mut self) -> R<()> {
+        let n = match self.next()? {
+            b'E' => self.special_func("")?,
+            b'K' | b'A' => self.special_func("@autoclosure ")?,
+            b'C' => self.special_func("@convention(c) ")?,
+            b'B' => self.special_func("@convention(block) ")?,
+            b'f' => self.special_func("@convention(thin) ")?,
+            b'l' => {
+                let mut protos = self.protocol_list()?;
+                protos.push(N::Nominal { kind: 'P', ctx: Box::new(N::Module("Swift".into())), name: "AnyObject".into() });
+                N::Existential(protos)
+            }
+            b'c' => {
+                let class = self.pop_type()?;
+                let protos = self.protocol_list()?;
+                N::ClassBound { class: Box::new(class), protos }
+            }
+            b'p' => N::ExistentialMetatype(Box::new(self.pop_type()?)),
+            b'D' => {
+                self.pop_type()?;
+                N::DynamicSelf
+            }
+            b'w' => N::Attributed { text: "weak ", inner: Box::new(self.pop_type()?), wrapped: true },
+            b'o' => N::Attributed { text: "unowned ", inner: Box::new(self.pop_type()?), wrapped: true },
+            b'u' => N::Attributed { text: "unowned(unsafe) ", inner: Box::new(self.pop_type()?), wrapped: true },
+            b'b' => N::Attributed { text: "@box ", inner: Box::new(self.pop_type()?), wrapped: false },
+            k @ (b'M' | b'm') => {
+                let text = match self.next()? {
+                    b'T' => "@thick ",
+                    b't' => "@thin ",
+                    b'o' => "@objc_metatype ",
+                    _ => return Err("unsupported metatype representation".into()),
+                };
+                let t = Box::new(self.pop_type()?);
+                let meta = if k == b'M' { N::ReprMetatype(t) } else { N::ExistentialMetatype(t) };
+                N::Attributed { text, inner: Box::new(meta), wrapped: false }
+            }
+            _ => return Err("unsupported special type".into()),
+        };
+        self.push(n)
+    }
+
     fn param_count(f: &N) -> usize {
         match f {
             N::Func { params, .. } => match params.as_ref() {
@@ -684,85 +763,6 @@ impl<'a> D<'a> {
         }
         let inner = self.pop_type()?;
         self.push(N::Global { prefix: "enum case for".into(), inner: Box::new(inner), suffix: String::new() })
-    }
-
-    /// The protocols of an existential, nothing for `Any`, or a list whose first entry
-    /// is followed by a `_` marker, as for a tuple. Shared by `p` and the `X` types built on it.
-    fn protocol_list(&mut self) -> R<Vec<N>> {
-        let mut protos = Vec::new();
-        if self.pop_if(|n| matches!(n, N::EmptyList)).is_none() {
-            loop {
-                if protos.len() > 32 {
-                    return Err("too many protocols".into());
-                }
-                let first = self.pop_if(|n| matches!(n, N::FirstMarker)).is_some();
-                protos.push(self.pop_protocol()?);
-                if first {
-                    break;
-                }
-            }
-            protos.reverse();
-        }
-        Ok(protos)
-    }
-
-    /// The function type of `XE` and its relatives: the parameters and the result, then at most one
-    /// `throws` marker and one `async` marker, in that order from the top of the stack. `attr` is the
-    /// word printed before the type, if any.
-    fn special_func(&mut self, attr: &'static str) -> R<N> {
-        let throws = self.pop_if(|n| matches!(n, N::Throws)).is_some();
-        let is_async = self.pop_if(|n| matches!(n, N::Async)).is_some();
-        let params = self.pop_params()?;
-        let result = self.pop_params()?;
-        let f = N::Func { params: Box::new(params), result: Box::new(result), throws, is_async };
-        Ok(if attr.is_empty() { f } else { N::Attributed { text: attr, inner: Box::new(f), wrapped: true } })
-    }
-
-    /// `X` and a kind letter. The function kinds take parameters and a result like `c` does and
-    /// print an attribute before them: `E` none, `K` and `A` `@autoclosure`, `C` `@convention(c)`,
-    /// `B` `@convention(block)`, `f` `@convention(thin)`. `l` is `AnyObject` after a protocol list,
-    /// `c` a class and a protocol list, `p` the metatype of a protocol, `D` the dynamic `Self`, `w`
-    /// `o` `u` the ownership of a type, and `M` / `m` a metatype followed by its representation.
-    fn special_type(&mut self) -> R<()> {
-        let n = match self.next()? {
-            b'E' => self.special_func("")?,
-            b'K' | b'A' => self.special_func("@autoclosure ")?,
-            b'C' => self.special_func("@convention(c) ")?,
-            b'B' => self.special_func("@convention(block) ")?,
-            b'f' => self.special_func("@convention(thin) ")?,
-            b'l' => {
-                let mut protos = self.protocol_list()?;
-                protos.push(N::Nominal { kind: 'P', ctx: Box::new(N::Module("Swift".into())), name: "AnyObject".into() });
-                N::Existential(protos)
-            }
-            b'c' => {
-                let class = self.pop_type()?;
-                let protos = self.protocol_list()?;
-                N::ClassBound { class: Box::new(class), protos }
-            }
-            b'p' => N::ExistentialMetatype(Box::new(self.pop_type()?)),
-            b'D' => {
-                self.pop_type()?;
-                N::DynamicSelf
-            }
-            b'w' => N::Attributed { text: "weak ", inner: Box::new(self.pop_type()?), wrapped: true },
-            b'o' => N::Attributed { text: "unowned ", inner: Box::new(self.pop_type()?), wrapped: true },
-            b'u' => N::Attributed { text: "unowned(unsafe) ", inner: Box::new(self.pop_type()?), wrapped: true },
-            b'b' => N::Attributed { text: "@box ", inner: Box::new(self.pop_type()?), wrapped: false },
-            k @ (b'M' | b'm') => {
-                let text = match self.next()? {
-                    b'T' => "@thick ",
-                    b't' => "@thin ",
-                    b'o' => "@objc_metatype ",
-                    _ => return Err("unsupported metatype representation".into()),
-                };
-                let t = Box::new(self.pop_type()?);
-                let meta = if k == b'M' { N::ReprMetatype(t) } else { N::ExistentialMetatype(t) };
-                N::Attributed { text, inner: Box::new(meta), wrapped: false }
-            }
-            _ => return Err("unsupported special type".into()),
-        };
-        self.push(n)
     }
 
     fn note_param(&mut self, idx: u64) {
