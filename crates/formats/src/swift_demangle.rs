@@ -796,6 +796,21 @@ impl<'a> D<'a> {
         self.push(N::Global { prefix, inner: Box::new(inner), suffix: String::new() })
     }
 
+    /// `Tv` and an optional index: the outlined variable of the symbol before it, `#0` for `Tv_`
+    /// and `#1` for `Tv0_`. The operand is a function, a type or a global, but not a bare name, a
+    /// module or another outlined variable. `swift-demangle` stops at an index of 2^31 or more.
+    fn outlined_variable(&mut self) -> R<()> {
+        let i = self.index()?;
+        if i >= 1 << 31 {
+            return Err("outlined variable index too large".into());
+        }
+        if matches!(self.stack.last(), Some(N::Global { prefix, .. }) if prefix.starts_with("outlined variable")) {
+            return Err("outlined variable of an outlined variable".into());
+        }
+        let inner = self.pop_type()?;
+        self.push(N::Global { prefix: format!("outlined variable #{i} of"), inner: Box::new(inner), suffix: String::new() })
+    }
+
     /// `WC`: the case's entity, such as `main.E.one(main.E.Type) -> main.E`, or a type. A module, a
     /// bare name or another global (a metadata or witness symbol) before it is not a case.
     fn enum_case(&mut self) -> R<()> {
@@ -1173,6 +1188,7 @@ impl<'a> D<'a> {
                         let phrase = if k == b'Y' { "suspend resume" } else { "await resume" };
                         return self.async_thunk(format!("({i}) {phrase} partial function for"));
                     }
+                    b'v' => return self.outlined_variable(),
                     _ => return Err("unsupported thunk or specialization".into()),
                 };
                 self.global(prefix)

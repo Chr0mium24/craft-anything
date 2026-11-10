@@ -2137,7 +2137,7 @@ Owner: open · Status: in progress
       operator, so every addressor was reported invalid: `_$s5Books19PAGETURNLOG_ENABLEDSbvau` is
       `Books.PAGETURNLOG_ENABLED.unsafeMutableAddressor : Swift.Bool`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-addressors
-- [ ] Swift outlined variables decode. `Tv` with an optional index names the outlined variable of the
+- [x] Swift outlined variables decode. `Tv` with an optional index names the outlined variable of the
       symbol before it (a function, a protocol witness, or a global), but the demangler reported every
       one as an unsupported thunk, so `_$s013CompilerSwiftA21PluginMessageHandling0C7FeatureO8rawValueACSgSS_tcfCTv_`
       is `outlined variable #0 of CompilerSwiftCompilerPluginMessageHandling.PluginFeature.init(rawValue: Swift.String) -> CompilerSwiftCompilerPluginMessageHandling.PluginFeature?`.
