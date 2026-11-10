@@ -577,6 +577,44 @@ impl<'a> D<'a> {
         Ok(Some(a))
     }
 
+    /// `w` and two letters: one value witness function of a type, the code the runtime calls to
+    /// copy, move, destroy or read the enum tag of a value of that type. The operand must be a
+    /// whole type; a module, a name, a member or another global before it is not one.
+    fn value_witness(&mut self) -> R<()> {
+        let name = match (self.next()?, self.next()?) {
+            (b'a', b'l') => "allocateBuffer",
+            (b'c', b'a') => "assignWithCopy",
+            (b'c', b'p') => "initializeWithCopy",
+            (b'd', b'e') => "deallocateBuffer",
+            (b'e', b't') => "getEnumTagSinglePayload",
+            (b'p', b'r') => "projectBuffer",
+            (b's', b't') => "storeEnumTagSinglePayload",
+            (b't', b'a') => "assignWithTake",
+            (b't', b'k') => "initializeWithTake",
+            (b't', b'T') => "initializeArrayWithTakeBackToFront",
+            (b'u', b'g') => "getEnumTag",
+            (b'u', b'i') => "destructiveInjectEnumTag",
+            (b'u', b'p') => "destructiveProjectEnumData",
+            (b'x', b'g') => "getExtraInhabitantIndex",
+            (b'x', b's') => "storeExtraInhabitant",
+            (b'x', b'x') => "destroy",
+            (b'C', b'c') => "initializeArrayWithCopy",
+            (b'C', b'p') => "initializeBufferWithCopy",
+            (b'C', b'P') => "initializeBufferWithCopyOfBuffer",
+            (b'T', b'k') => "initializeBufferWithTake",
+            (b'T', b't') => "initializeArrayWithTakeFrontToBack",
+            (b'T', b'K') => "initializeBufferWithTakeOfBuffer",
+            (b'X', b'x') => "destroyArray",
+            (b'X', b'X') => "destroyBuffer",
+            _ => return Err("unsupported value witness kind".into()),
+        };
+        if matches!(self.stack.last(), Some(N::Global { .. } | N::Entity { .. } | N::Conformance { .. } | N::Extension { .. })) {
+            return Err("value witness of a non-type".into());
+        }
+        let ty = self.pop_type()?;
+        self.push(N::Global { prefix: format!("{name} value witness for"), inner: Box::new(ty), suffix: String::new() })
+    }
+
     /// An addressor: `a` (mutable) or `l`, then a letter for its kind.
     fn addressor(&mut self) -> R<&'static str> {
         let mutable = self.next()? == b'a';
@@ -1008,6 +1046,7 @@ impl<'a> D<'a> {
                     is_static: false,
                 })
             }
+            b'w' => self.value_witness(),
             b'x' => {
                 self.note_param(0);
                 self.push(N::Param(0, 0))
