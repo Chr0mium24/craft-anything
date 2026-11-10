@@ -1815,6 +1815,12 @@ Owner: open · Status: in progress
       type, but the demangler had no `w` operator and reported it invalid ("unsupported operator
       'w'"): `_$ss6ResultOwug` is `getEnumTag value witness for Swift.Result`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-value-witnesses
+- [ ] Swift lazy witness table cache variables decode. A symbol ending `WL` names a type and
+      the conformance it is used with, as `Wl` does, but the demangler read only one operand and
+      reported it invalid ("N nodes left after decoding"):
+      `_$s7SwiftUI4EdgeO3SetVAESQAAWL` is `lazy protocol witness table cache variable for type
+      SwiftUI.Edge.Set and conformance SwiftUI.Edge.Set : Swift.Equatable in SwiftUI`.
+      — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-witness-cache
 - [x] Swift enum case symbols decode. A symbol ending `WC` is the function that builds an enum
       case, but the demangler read `WC` as an unknown witness kind and reported it invalid
       ("unsupported witness kind"): `_$s10FindMyBase3BitO3oneyA2CmFWC` is
