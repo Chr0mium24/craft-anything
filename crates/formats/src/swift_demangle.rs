@@ -1202,10 +1202,13 @@ fn render(n: &N, depth: usize) -> String {
                     let acc = accessor.filter(|a| !a.is_empty()).map(|a| format!(".{a}")).unwrap_or_default();
                     format!("{c}.{}{acc} : {}", name.clone().unwrap_or_default(), ty.as_ref().map(|t| render(t, d)).unwrap_or_default())
                 }
-                EKind::Subscript => {
-                    let acc = accessor.filter(|a| !a.is_empty()).map(|a| format!(".{a}")).unwrap_or_default();
-                    format!("{c}.subscript{}{acc}", ty_text(ty))
-                }
+                // With an accessor the accessor comes right after `subscript` and the type follows
+                // a colon, as for a variable: `X.subscript.getter : (Swift.Int) -> A`. Without one
+                // (a property descriptor) the type is written straight after: `X.subscript(Swift.Int) -> A`.
+                EKind::Subscript => match accessor.filter(|a| !a.is_empty()) {
+                    Some(a) => format!("{c}.subscript.{a} : {}", ty_text(ty)),
+                    None => format!("{c}.subscript{}", ty_text(ty)),
+                },
                 EKind::Closure(i, explicit) => {
                     format!(
                         "{} #{} {} in {c}",
