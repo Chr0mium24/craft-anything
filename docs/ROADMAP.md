@@ -1685,6 +1685,11 @@ Owner: open · Status: in progress
       and `Equatable` conformance descriptors and witness tables (`…SQAAMc`, `…SQsWP`) were
       reported invalid ("expected a protocol").
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-equatable
+- [ ] Swift symbols name the type metadata singleton initialization cache. The demangler read
+      `Ml` with the name of `ML`, so `_$s10RealityKit30__RKEntityTriggerSpecificationOMl` read
+      "lazy cache variable for type metadata for RealityKit.__RKEntityTriggerSpecification" where
+      `swift-demangle` prints `type metadata singleton initialization cache for …`.
+      — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-singleton-cache
 - [x] Require a complete Cargo package version before a registry or vendor path becomes Rust dependency evidence.
       — claimed: Afloat16, branch bugfix/r3.12-rust-dependency-versions
 - [x] Swift symbols name the right generic parameter in an associated type. `Qy` numbers its
