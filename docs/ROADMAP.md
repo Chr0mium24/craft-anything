@@ -1685,7 +1685,7 @@ Owner: open · Status: in progress
       and `Equatable` conformance descriptors and witness tables (`…SQAAMc`, `…SQsWP`) were
       reported invalid ("expected a protocol").
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-equatable
-- [ ] Swift symbols name the type metadata singleton initialization cache. The demangler read
+- [x] Swift symbols name the type metadata singleton initialization cache. The demangler read
       `Ml` with the name of `ML`, so `_$s10RealityKit30__RKEntityTriggerSpecificationOMl` read
       "lazy cache variable for type metadata for RealityKit.__RKEntityTriggerSpecification" where
       `swift-demangle` prints `type metadata singleton initialization cache for …`.
