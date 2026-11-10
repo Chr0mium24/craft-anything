@@ -856,6 +856,26 @@ impl<'a> D<'a> {
         }
     }
 
+    /// `WZ` and `Wz`: the one-time initialization function or token of a stored variable. The
+    /// operand is a context (a module, a nominal type or an extension), then the variable's name or
+    /// private name, then the `_` that ends it. Only the name is printed; the context is read and
+    /// dropped, as `swift-demangle` prints it. A bare name, a type or module in place of the name,
+    /// or any other context is rejected.
+    fn one_time_init(&mut self, what: &str) -> R<()> {
+        if !matches!(self.pop()?, N::FirstMarker) {
+            return Err("one-time initialization without a name marker".into());
+        }
+        let name = match self.pop()? {
+            n @ (N::Ident(_) | N::Private(_)) => n,
+            _ => return Err("expected a variable name".into()),
+        };
+        match self.pop()? {
+            N::Ident(_) | N::Module(_) | N::Nominal { .. } | N::Extension { .. } => {}
+            _ => return Err("expected a context".into()),
+        }
+        self.push(N::Global { prefix: what.into(), inner: Box::new(name), suffix: String::new() })
+    }
+
     /// `WT`: a conformance, the path of an associated type, and the protocol that type conforms
     /// to. The path is a first element, then `_`, then any further elements; an element is a name,
     /// optionally followed by the protocol that declares it.
@@ -1180,6 +1200,8 @@ impl<'a> D<'a> {
             b'W' => {
                 let k = self.next()?;
                 match k {
+                    b'Z' => self.one_time_init("one-time initialization function for"),
+                    b'z' => self.one_time_init("one-time initialization token for"),
                     b'P' | b'p' | b'a' | b'G' => {
                         let conf = self.conformance()?;
                         let p = match k {
