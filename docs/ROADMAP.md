@@ -1820,6 +1820,11 @@ Owner: open · Status: in progress
       ("unsupported witness kind"): `_$s10FindMyBase3BitO3oneyA2CmFWC` is
       `enum case for FindMyBase.Bit.one(FindMyBase.Bit.Type) -> FindMyBase.Bit`.
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-enum-cases
+- [ ] Swift symbols decode opaque result types. A function, variable or subscript declared to
+      return `some P` mangles that result as `Qr` (`QR` for a second or later one in a tuple),
+      and a use of it elsewhere as `QO` and `Qo`, but the demangler reported all of them invalid
+      ("unsupported associated type"): `_$s1a2mkQryF` is `a.mk() -> some`.
+      — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-opaque-types
 - [x] Swift symbols decode private declarations. A private or `fileprivate` declaration's name
       is followed by an identifier for its file and `LL`, and the demangler reported every such
       symbol invalid ("unsupported operator 'L'"):
