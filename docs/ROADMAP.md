@@ -1822,7 +1822,7 @@ Owner: open · Status: in progress
       and `Equatable` conformance descriptors and witness tables (`…SQAAMc`, `…SQsWP`) were
       reported invalid ("expected a protocol").
       — claimed: Chr0mium24, branch bugfix/r3.12-swift-demangle-equatable
-- [ ] Swift symbols spell the concurrency types as `Sc` and a letter. The demangler reported all of
+- [x] Swift symbols spell the concurrency types as `Sc` and a letter. The demangler reported all of
       them invalid ("concurrency standard types are not supported"), so `_$sScAMp` should read
       "protocol descriptor for Swift.Actor" and `ScT`, `ScG`, `ScS` and the rest their own types,
       with an unknown letter after `Sc` still invalid.

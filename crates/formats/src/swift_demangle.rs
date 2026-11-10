@@ -375,7 +375,7 @@ impl<'a> D<'a> {
             b'C' => return self.push(N::Module("__C_Synthesized".into())),
             b'a' => ('V', "Array"),
             b'b' => ('V', "Bool"),
-            b'c' => return Err("concurrency standard types are not supported".into()),
+            b'c' => Self::concurrency_type(self.next()?)?,
             b'D' => ('V', "Dictionary"),
             b'd' => ('V', "Double"),
             b'f' => ('V', "Float"),
@@ -429,6 +429,32 @@ impl<'a> D<'a> {
             self.push(n.clone())?;
         }
         Ok(())
+    }
+
+    /// The type behind `Sc` and one more letter, as `(kind, name)`. A letter with no type is an error.
+    fn concurrency_type(c: u8) -> R<(char, &'static str)> {
+        Ok(match c {
+            b'A' => ('P', "Actor"),
+            b'C' => ('V', "CheckedContinuation"),
+            b'c' => ('V', "UnsafeContinuation"),
+            b'E' => ('V', "CancellationError"),
+            b'e' => ('V', "UnownedSerialExecutor"),
+            b'F' => ('P', "Executor"),
+            b'f' => ('P', "SerialExecutor"),
+            b'G' => ('V', "TaskGroup"),
+            b'g' => ('V', "ThrowingTaskGroup"),
+            b'h' => ('P', "TaskExecutor"),
+            b'I' => ('P', "AsyncIteratorProtocol"),
+            b'i' => ('P', "AsyncSequence"),
+            b'J' => ('V', "UnownedJob"),
+            b'M' => ('C', "MainActor"),
+            b'P' => ('V', "TaskPriority"),
+            b'S' => ('V', "AsyncStream"),
+            b's' => ('V', "AsyncThrowingStream"),
+            b'T' => ('V', "Task"),
+            b't' => ('V', "UnsafeCurrentTask"),
+            other => return Err(format!("unknown concurrency standard type Sc{}", char::from(other))),
+        })
     }
 
     fn swift_enum(name: &str) -> N {
