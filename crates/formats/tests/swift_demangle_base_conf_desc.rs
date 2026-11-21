@@ -37,7 +37,7 @@ fn a_constructed_symbol_decodes() {
 
 #[test]
 fn an_operand_that_is_not_a_type_or_protocol_is_invalid() {
-    for symbol in ["_$sTb", "_$s3FooTb", "_$s3Foo3BarTb"] {
+    for symbol in ["_$sTb", "_$s3FooTb", "_$s3Foo3BarTb", "_$sSiSiTb", "_$sSiNSQTb"] {
         assert_eq!(demangle(symbol).status, Status::Invalid, "{symbol}");
     }
 }

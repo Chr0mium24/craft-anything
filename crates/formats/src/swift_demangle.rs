@@ -963,7 +963,10 @@ impl<'a> D<'a> {
     /// protocol such as `SH`, both work.
     fn base_conformance_descriptor(&mut self) -> R<()> {
         let proto = self.pop_protocol()?;
-        let ty = self.pop_type()?;
+        if !matches!(proto, N::Nominal { kind: 'P', .. }) {
+            return Err("base conformance descriptor protocol is not a protocol".into());
+        }
+        let ty = self.witness_type()?;
         let text = format!("base conformance descriptor for {}: {}", render(&ty, 0), render(&proto, 0));
         self.push(N::Global { prefix: text, inner: Box::new(N::EmptyList), suffix: String::new() })
     }
