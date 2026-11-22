@@ -1663,8 +1663,8 @@ fn path(n: &N, depth: usize) -> String {
     match n {
         N::Module(m) | N::Ident(m) => m.clone(),
         N::Nominal { ctx, name, .. } => {
-            if let Some((base, num)) = name.split_once('\u{0}') {
-                format!("{base} {num} in {}", path(ctx, depth + 1))
+            if name.contains('\u{0}') {
+                format!("{} in {}", name.replace('\u{0}', " "), path(ctx, depth + 1))
             } else {
                 format!("{}.{name}", path(ctx, depth + 1))
             }
@@ -1852,11 +1852,20 @@ fn render(n: &N, depth: usize) -> String {
             let c0 = path(ctx, d);
             let raw_name = name.clone().unwrap_or_default();
             // Locally-discriminated declarations (`L…`) mangle with a hidden
-            // marker inserted by the decoder: the name carries a `\0` followed
-            // by `#N`. Render them as `prefix name #N … in containing`,
-            // where the containing (type or module) moves after `in `.
-            let (name_str, c, local_containing) = if let Some((base, num)) = raw_name.split_once('\u{0}') {
-                (format!("{base} {num}"), String::new(), Some(c0.clone()))
+            // marker inserted by the decoder: the name carries one or more `\0`
+            // followed by `#N`. Render them as `prefix name #N … in containing`,
+            // where the containing (type or module) moves after `in `. Repeated
+            // discriminators (`L_` operands) are all decoded, so no NUL leaks.
+            let ctx_is_local = match ctx.as_ref() {
+                N::Nominal { name, .. } => name.contains('\u{0}'),
+                N::Ident(s) | N::Private(s) | N::Operator(s) => s.contains('\u{0}'),
+                N::Entity { name, .. } => name.as_deref().unwrap_or_default().contains('\u{0}'),
+                _ => false,
+            };
+            let (name_str, c, local_containing) = if raw_name.contains('\u{0}') {
+                (raw_name.replace('\u{0}', " "), String::new(), Some(c0.clone()))
+            } else if ctx_is_local {
+                (raw_name, String::new(), Some(c0.clone()))
             } else {
                 (raw_name, c0.clone(), None)
             };
