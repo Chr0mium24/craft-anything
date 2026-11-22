@@ -1174,6 +1174,26 @@ impl<'a> D<'a> {
             b'K' => self.push(N::Throws),
             b'L' => match self.next()? {
                 b'L' => self.private_name(),
+                // Related declaration: `L` + a related discriminator [a-jA-J],
+                // as in `related decl 'e' for …`.
+                k if matches!(k, b'a'..=b'j' | b'A'..=b'J') => {
+                    let disc = char::from(k);
+                    let name = self.pop_decl_name()?;
+                    self.push(N::Ident(format!("related decl '{disc}' for {name}")))
+                }
+                // Anonymous file-discriminated declaration: `Ll`, as in `main.(in foo)`.
+                b'l' => {
+                    let name = self.pop_decl_name()?;
+                    self.push(N::Ident(format!("(in {name})")))
+                }
+                // Locally-discriminated declaration: `L` + an INDEX, as in
+                // `foo #1 … in …`.
+                k if k == b'_' || k.is_ascii_digit() => {
+                    self.pos -= 1; // back to the start of the INDEX
+                    let idx = self.index()?;
+                    let name = self.pop_decl_name()?;
+                    self.push(N::Ident(format!("{name}\u{0}#{}", idx + 1)))
+                }
                 k => Err(format!("unsupported operator 'L{}'", char::from(k))),
             },
             b'M' => {
@@ -1822,29 +1842,45 @@ fn render(n: &N, depth: usize) -> String {
             s
         }
         N::Entity { kind, ctx, name, labels, ty, accessor, is_static } => {
-            let c = path(ctx, d);
+            let c0 = path(ctx, d);
+            let raw_name = name.clone().unwrap_or_default();
+            // Locally-discriminated declarations (`L…`) mangle with a hidden
+            // marker inserted by the decoder: the name carries a `\0` followed
+            // by `#N`. Render them as `prefix name #N … in containing`,
+            // where the containing (type or module) moves after `in `.
+            let (name_str, c, local_containing) = if let Some((base, num)) = raw_name.split_once('\u{0}') {
+                let (prefix, containing) = match c0.rfind('.') {
+                    Some(i) => (c0[..i].to_string(), c0[i + 1..].to_string()),
+                    None => (String::new(), c0.clone()),
+                };
+                (format!("{base} {num}"), prefix, Some(containing))
+            } else {
+                (raw_name, c0.clone(), None)
+            };
+            let sep = if c.is_empty() { "" } else { "." };
+            let sp = if local_containing.is_some() { " " } else { "" };
             let st = if *is_static { "static " } else { "" };
             let ty_text = |t: &Option<Box<N>>| t.as_ref().map(|t| func_text(t, labels, d)).unwrap_or_default();
             let body = match kind {
-                EKind::Func => format!("{c}.{}{}", name.clone().unwrap_or_default(), ty_text(ty)),
+                EKind::Func => format!("{c}{sep}{}{}{}", name_str, sp, ty_text(ty)),
                 // The allocating name is kept for a class's own initialisers only. In a struct, an
                 // enum, a protocol or any extension, even of a class, it reads `init`.
-                EKind::AllocInit if matches!(ctx.as_ref(), N::Nominal { kind: 'C', .. }) => format!("{c}.__allocating_init{}", ty_text(ty)),
-                EKind::AllocInit | EKind::Init => format!("{c}.init{}", ty_text(ty)),
-                EKind::Deinit => format!("{c}.deinit"),
-                EKind::DeallocDeinit => format!("{c}.__deallocating_deinit"),
-                EKind::IvarDestroyer => format!("{c}.__ivar_destroyer"),
-                EKind::IvarInitializer => format!("{c}.__ivar_initializer"),
+                EKind::AllocInit if matches!(ctx.as_ref(), N::Nominal { kind: 'C', .. }) => format!("{c}{sep}__allocating_init{}{}", sp, ty_text(ty)),
+                EKind::AllocInit | EKind::Init => format!("{c}{sep}init{}{}", sp, ty_text(ty)),
+                EKind::Deinit => format!("{c}{sep}deinit"),
+                EKind::DeallocDeinit => format!("{c}{sep}__deallocating_deinit"),
+                EKind::IvarDestroyer => format!("{c}{sep}__ivar_destroyer"),
+                EKind::IvarInitializer => format!("{c}{sep}__ivar_initializer"),
                 EKind::Var => {
                     let acc = accessor.filter(|a| !a.is_empty()).map(|a| format!(".{a}")).unwrap_or_default();
-                    format!("{c}.{}{acc} : {}", name.clone().unwrap_or_default(), ty.as_ref().map(|t| render(t, d)).unwrap_or_default())
+                    format!("{c}{sep}{}{acc} : {}", name_str, ty.as_ref().map(|t| render(t, d)).unwrap_or_default())
                 }
                 // With an accessor the accessor comes right after `subscript` and the type follows
                 // a colon, as for a variable: `X.subscript.getter : (Swift.Int) -> A`. Without one
                 // (a property descriptor) the type is written straight after: `X.subscript(Swift.Int) -> A`.
                 EKind::Subscript => match accessor.filter(|a| !a.is_empty()) {
-                    Some(a) => format!("{c}.subscript.{a} : {}", ty_text(ty)),
-                    None => format!("{c}.subscript{}", ty_text(ty)),
+                    Some(a) => format!("{c}{sep}subscript.{a} : {}", ty_text(ty)),
+                    None => format!("{c}{sep}subscript{}", ty_text(ty)),
                 },
                 EKind::Closure(i, explicit) => {
                     format!(
@@ -1857,7 +1893,11 @@ fn render(n: &N, depth: usize) -> String {
                 EKind::DefaultArg(i) => format!("default argument {i} of {c}"),
                 EKind::VarInit => format!("variable initialization expression of {c}"),
             };
-            format!("{st}{body}")
+            let out = format!("{st}{body}");
+            match local_containing {
+                Some(cont) => format!("{out} in {cont}"),
+                None => out,
+            }
         }
     }
 }
