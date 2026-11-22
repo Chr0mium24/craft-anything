@@ -21,4 +21,5 @@ fn same_type_requirements_print_with_double_equals() {
 #[test]
 fn malformed_same_type_requirements_are_invalid() {
     assert_eq!(demangle("_$s4main3fooxxXRzlF").status, Status::Invalid);
+    assert_eq!(demangle("_$s4main3fooyyxSiRtzlF").status, Status::Invalid);
 }
