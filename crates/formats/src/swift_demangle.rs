@@ -1304,6 +1304,36 @@ impl<'a> D<'a> {
                         _ => Err("opaque type without its declaration".into()),
                     }
                 }
+                b'p' => {
+                    // Pack expansion type: `type type 'Qp'`. Pattern then count (postfix: count
+                    // was pushed last). The count is checked but not printed.
+                    let _count = self.pop_type()?;
+                    let pattern = self.pop_type()?;
+                    self.push(N::Attributed { text: "repeat ", inner: Box::new(pattern), wrapped: false })
+                }
+                b'P' => {
+                    // Pack type: `pack-element-list 'QP'`.
+                    let mut elems = Vec::new();
+                    // Consume an optional trailing underscore separator (FirstMarker).
+                    self.pop_if(|n| matches!(n, N::FirstMarker));
+                    // A pack type usually wraps a single expansion/element pushed immediately
+                    // below that separator. Collect at most one pending type here; lists with
+                    // several elements have their own intervening FirstMarker boundaries.
+                    if !self.stack.is_empty() && !matches!(self.stack.last(), Some(N::EmptyList | N::FirstMarker)) {
+                        elems.push(self.pop_type()?);
+                    }
+                    elems.reverse();
+                    let inner = elems.iter().map(|n| render(n, 0)).collect::<Vec<_>>().join(", ");
+                    self.push(N::Builtin(format!("Pack{{{inner}}}")))
+                }
+                b'e' => {
+                    let index = self.index()?;
+                    let ty = self.pop_type()?;
+                    // Pack element type of a pack; render as the inner type. The index is checked
+                    // but, like other pack nodes here, not printed.
+                    let _ = index;
+                    self.push(ty)
+                }
                 _ => Err("unsupported associated type".into()),
             },
             b'R' => {
