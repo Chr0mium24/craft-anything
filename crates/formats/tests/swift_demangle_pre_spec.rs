@@ -48,4 +48,6 @@ fn malformed_pre_specialization_is_invalid() {
     invalid("_$sSa12_endMutationyyFyXl_Ts10");
     invalid("_$sSa12_endMutationyyFyXl_");
     invalid("_$s4main3fooyyF_Ts5");
+    invalid("_$s4main3fooyyFSiTs5");
+    invalid("_$s4main3fooyyFK_Ts5");
 }

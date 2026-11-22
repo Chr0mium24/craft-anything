@@ -980,11 +980,32 @@ impl<'a> D<'a> {
             return Err("generic pre-specialization without arguments".into());
         }
         let mut args = Vec::new();
+        let mut saw_boundary = false;
         while self.stack.len() > 1 {
             let n = self.pop()?;
-            if !matches!(n, N::FirstMarker) {
-                args.push(n);
+            if matches!(n, N::FirstMarker) {
+                saw_boundary = true;
+                continue;
             }
+            if matches!(
+                n,
+                N::Ident(_)
+                    | N::Private(_)
+                    | N::Operator(_)
+                    | N::EmptyList
+                    | N::Throws
+                    | N::Async
+                    | N::FnMarker(_)
+                    | N::Requirement(_)
+                    | N::Sig { .. }
+                    | N::Module(_)
+            ) {
+                return Err("expected a type argument".into());
+            }
+            args.push(n);
+        }
+        if !saw_boundary {
+            return Err("generic pre-specialization without a boundary".into());
         }
         if args.is_empty() {
             return Err("generic pre-specialization without arguments".into());
