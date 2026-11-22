@@ -129,6 +129,11 @@ enum N {
         index: u64,
     },
     Builtin(String),
+    /// A pack element type `/* level: L */ each X`.
+    PackElement {
+        level: u64,
+        inner: Box<N>,
+    },
     EmptyList,
     FirstMarker,
     Throws,
@@ -1312,27 +1317,34 @@ impl<'a> D<'a> {
                     self.push(N::Attributed { text: "repeat ", inner: Box::new(pattern), wrapped: false })
                 }
                 b'P' => {
-                    // Pack type: `pack-element-list 'QP'`.
+                    // Pack type: `pack-element-list 'QP'`. Consume the whole list: an empty
+                    // list, or types collected until the first-element marker, then reversed.
                     let mut elems = Vec::new();
-                    // Consume an optional trailing underscore separator (FirstMarker).
-                    self.pop_if(|n| matches!(n, N::FirstMarker));
-                    // A pack type usually wraps a single expansion/element pushed immediately
-                    // below that separator. Collect at most one pending type here; lists with
-                    // several elements have their own intervening FirstMarker boundaries.
-                    if !self.stack.is_empty() && !matches!(self.stack.last(), Some(N::EmptyList | N::FirstMarker)) {
-                        elems.push(self.pop_type()?);
+                    if self.pop_if(|n| matches!(n, N::EmptyList)).is_none() {
+                        loop {
+                            if elems.len() > 64 {
+                                return Err("too many pack elements".into());
+                            }
+                            let first = self.pop_if(|n| matches!(n, N::FirstMarker)).is_some();
+                            elems.push(self.pop_type()?);
+                            if first {
+                                break;
+                            }
+                        }
+                        elems.reverse();
                     }
-                    elems.reverse();
                     let inner = elems.iter().map(|n| render(n, 0)).collect::<Vec<_>>().join(", ");
-                    self.push(N::Builtin(format!("Pack{{{inner}}}")))
+                    if inner.len() + 7 > self.budget {
+                        return Err("symbol expands too much".into());
+                    }
+                    let n = N::Builtin(format!("Pack{{{inner}}}"));
+                    self.budget = self.budget.checked_sub(weight(&n, 0)).ok_or("symbol expands too much")?;
+                    self.push(n)
                 }
                 b'e' => {
-                    let index = self.index()?;
+                    let level = self.index()?;
                     let ty = self.pop_type()?;
-                    // Pack element type of a pack; render as the inner type. The index is checked
-                    // but, like other pack nodes here, not printed.
-                    let _ = index;
-                    self.push(ty)
+                    self.push(N::PackElement { level, inner: Box::new(ty) })
                 }
                 _ => Err("unsupported associated type".into()),
             },
@@ -1643,6 +1655,7 @@ fn weight(n: &N, depth: usize) -> usize {
         N::Metatype(x) | N::ExistentialMetatype(x) | N::ReprMetatype(x) | N::Inout(x) | N::OpaqueDecl(x) => weight(x, d),
         N::OpaqueRef { decl, .. } => weight(decl, d),
         N::Attributed { inner, .. } => weight(inner, d),
+        N::PackElement { inner, .. } => weight(inner, d).saturating_add(1),
         N::ClassBound { class, protos } => protos.iter().fold(weight(class, d), |a, x| a.saturating_add(weight(x, d))),
         N::Member { base, .. } => weight(base, d),
         N::Existential(v) => v.iter().fold(0usize, |a, x| a.saturating_add(weight(x, d))),
@@ -1650,6 +1663,7 @@ fn weight(n: &N, depth: usize) -> usize {
         N::Entity { ctx, ty, .. } => weight(ctx, d).saturating_add(ty.as_ref().map_or(0, |t| weight(t, d))),
         N::Conformance { ty, proto, module } => weight(ty, d).saturating_add(weight(proto, d)).saturating_add(weight(module, d)),
         N::Global { inner, .. } => weight(inner, d),
+        N::Builtin(t) => t.len(),
         _ => 0,
     };
     kids.saturating_add(1)
@@ -1796,6 +1810,7 @@ fn render(n: &N, depth: usize) -> String {
     let d = depth + 1;
     match n {
         N::Ident(s) | N::Private(s) | N::Operator(s) | N::Module(s) | N::Builtin(s) => s.clone(),
+        N::PackElement { level, inner } => format!("/* level: {} */ each {}", level, render(inner, d)),
         N::Nominal { .. } | N::Extension { .. } => path(n, d),
         N::Bound { base, args } => {
             let b = path(base, d);

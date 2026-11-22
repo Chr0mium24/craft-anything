@@ -24,7 +24,15 @@ fn pack_expansions_render() {
 }
 
 #[test]
+fn pack_elements_render_with_level() {
+    assert_eq!(dm("_$sxQe_"), "/* level: 0 */ each A");
+    assert_eq!(dm("_$sxQe0_"), "/* level: 1 */ each A");
+}
+
+#[test]
 fn malformed_packs_are_invalid() {
     let d = demangle("_$s4main3fooVyQp");
+    assert_eq!(d.status, Status::Invalid);
+    let d = demangle("$sSi_QPSg_A63At_QPSg_A63Bt_QPSg_A63Ct_QPSg_A63Dt_QPSg_A63Et_QPSg");
     assert_eq!(d.status, Status::Invalid);
 }
