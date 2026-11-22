@@ -35,7 +35,7 @@ fn anonymous_file_discriminated() {
 /// Invalid cases.
 #[test]
 fn invalid_local_decls() {
-    for symbol in ["$s4main1fL", "$s4main1fLe", "$s4main1fL_", "$s4main1aLL"] {
+    for symbol in ["$s4main1fL", "$s4main1fLe", "$s4main1fL_", "$s4main1aLL", "$s4main1fL18446744073709551614_yyF"] {
         let d = demangle(symbol);
         // Some may demangle or not; ensure L alone without index is rejected.
         if symbol == "$s4main1fL" {

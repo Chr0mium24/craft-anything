@@ -1192,7 +1192,8 @@ impl<'a> D<'a> {
                     self.pos -= 1; // back to the start of the INDEX
                     let idx = self.index()?;
                     let name = self.pop_decl_name()?;
-                    self.push(N::Ident(format!("{name}\u{0}#{}", idx + 1)))
+                    let n = idx.checked_add(1).ok_or("index overflow")?;
+                    self.push(N::Ident(format!("{name}\u{0}#{n}")))
                 }
                 k => Err(format!("unsupported operator 'L{}'", char::from(k))),
             },
@@ -1661,7 +1662,13 @@ fn path(n: &N, depth: usize) -> String {
     }
     match n {
         N::Module(m) | N::Ident(m) => m.clone(),
-        N::Nominal { ctx, name, .. } => format!("{}.{name}", path(ctx, depth + 1)),
+        N::Nominal { ctx, name, .. } => {
+            if let Some((base, num)) = name.split_once('\u{0}') {
+                format!("{base} {num} in {}", path(ctx, depth + 1))
+            } else {
+                format!("{}.{name}", path(ctx, depth + 1))
+            }
+        }
         N::Extension { ty, .. } => path(ty, depth + 1),
         other => render(other, depth + 1),
     }
@@ -1849,11 +1856,7 @@ fn render(n: &N, depth: usize) -> String {
             // by `#N`. Render them as `prefix name #N … in containing`,
             // where the containing (type or module) moves after `in `.
             let (name_str, c, local_containing) = if let Some((base, num)) = raw_name.split_once('\u{0}') {
-                let (prefix, containing) = match c0.rfind('.') {
-                    Some(i) => (c0[..i].to_string(), c0[i + 1..].to_string()),
-                    None => (String::new(), c0.clone()),
-                };
-                (format!("{base} {num}"), prefix, Some(containing))
+                (format!("{base} {num}"), String::new(), Some(c0.clone()))
             } else {
                 (raw_name, c0.clone(), None)
             };
