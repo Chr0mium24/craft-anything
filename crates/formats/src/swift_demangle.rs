@@ -972,6 +972,25 @@ impl<'a> D<'a> {
         self.push(N::Global { prefix: what.into(), inner: Box::new(name), suffix: String::new() })
     }
 
+    /// `GENERIC-PARAM-INDEX`: `z` (depth 0, idx 0), a simple `INDEX` (depth 0, idx n + 1),
+    /// `d INDEX INDEX` (depth m + 1, idx n), or `s` (self). Returns `(depth, idx)`, where `idx` is
+    /// already scaled the way `N::Param` stores it.
+    fn generic_param_index(&mut self) -> R<(u64, u64)> {
+        if self.next_if(b'd') {
+            let depth = self.index()?.checked_add(1).ok_or("overflow")?;
+            let idx = self.index()?;
+            return Ok((depth, idx));
+        }
+        if self.next_if(b'z') {
+            return Ok((0, 0));
+        }
+        if self.next_if(b's') {
+            return Ok((0, 0));
+        }
+        let n = self.index()?;
+        Ok((0, n.checked_add(1).ok_or("overflow")?))
+    }
+
     /// `WT`: a conformance, the path of an associated type, and the protocol that type conforms
     /// to. The path is a first element, then `_`, then any further elements; an element is a name,
     /// optionally followed by the protocol that declares it.
@@ -1303,6 +1322,106 @@ impl<'a> D<'a> {
                         }
                         _ => Err("opaque type without its declaration".into()),
                     }
+                }
+                b'Z' => {
+                    // `QZ`: an associated type path (one or more names) rooted at the first
+                    // generic parameter (`A`). Shortcut for `QYz`.
+                    self.note_param(0);
+                    let mut parts = Vec::new();
+                    let mut closed = false;
+                    while !closed {
+                        let mut node = self.pop()?;
+                        if matches!(node, N::FirstMarker) {
+                            closed = true;
+                            node = self.pop()?;
+                        }
+                        match node {
+                            N::Ident(n) => parts.push(n),
+                            _ => return Err("expected an associated type name".into()),
+                        }
+                    }
+                    parts.reverse();
+                    if parts.is_empty() {
+                        return Err("empty associated type path".into());
+                    }
+                    let mut n = N::Param(0, 0);
+                    for name in parts {
+                        n = N::Member { base: Box::new(n), name };
+                    }
+                    self.add_sub(&n)?;
+                    self.push(n)
+                }
+                b'Y' => {
+                    // `QY`: an associated type path (one or more names) rooted at a generic
+                    // parameter numbered like `Qy`, possibly at a nested depth.
+                    let (depth, i) = self.generic_param_index()?;
+                    self.note_param(i);
+                    let mut parts = Vec::new();
+                    let mut closed = false;
+                    while !closed {
+                        let mut node = self.pop()?;
+                        if matches!(node, N::FirstMarker) {
+                            closed = true;
+                            node = self.pop()?;
+                        }
+                        match node {
+                            N::Ident(n) => parts.push(n),
+                            _ => return Err("expected an associated type name".into()),
+                        }
+                    }
+                    parts.reverse();
+                    if parts.is_empty() {
+                        return Err("empty associated type path".into());
+                    }
+                    let mut n = N::Param(depth, i);
+                    for name in parts {
+                        n = N::Member { base: Box::new(n), name };
+                    }
+                    self.add_sub(&n)?;
+                    self.push(n)
+                }
+                b'x' => {
+                    // `Qx`: an associated type named on a base type.
+                    let name = self.pop_name()?;
+                    let base = self.pop_type()?;
+                    let n = N::Member { base: Box::new(base), name };
+                    self.add_sub(&n)?;
+                    self.push(n)
+                }
+                b'X' => {
+                    // `QX`: an associated type path named on a base type.
+                    let mut parts = Vec::new();
+                    let mut closed = false;
+                    while !closed {
+                        let mut node = self.pop()?;
+                        if matches!(node, N::FirstMarker) {
+                            closed = true;
+                            node = self.pop()?;
+                        }
+                        match node {
+                            N::Ident(n) => parts.push(n),
+                            _ => return Err("expected an associated type name".into()),
+                        }
+                    }
+                    parts.reverse();
+                    if parts.is_empty() {
+                        return Err("empty associated type path".into());
+                    }
+                    let base = self.pop_type()?;
+                    let mut n = base;
+                    for name in parts {
+                        n = N::Member { base: Box::new(n), name };
+                    }
+                    self.add_sub(&n)?;
+                    self.push(n)
+                }
+                b'a' => {
+                    // `Qa`: an associated type declaration reference.
+                    let name = self.pop_name()?;
+                    let base = self.pop_type()?;
+                    let n = N::Member { base: Box::new(base), name };
+                    self.add_sub(&n)?;
+                    self.push(n)
                 }
                 _ => Err("unsupported associated type".into()),
             },
