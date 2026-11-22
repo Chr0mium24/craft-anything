@@ -106,6 +106,8 @@ enum N {
     },
     /// The type of `Self` in a class method that returns it. The type it was built from is not printed.
     DynamicSelf,
+    /// The constrained existential `Self` root of an associated-type path (`s`). Renders as `Self`.
+    ConstrainedExistentialSelf,
     /// A type with a word before it: `weak `, `@thick `, `@autoclosure `, `@convention(c) `.
     /// `wrapped` says whether an optional of it needs parentheses, `(weak A)?`.
     Attributed {
@@ -1335,10 +1337,21 @@ impl<'a> D<'a> {
                             closed = true;
                             node = self.pop()?;
                         }
-                        match node {
-                            N::Ident(n) => parts.push(n),
-                            _ => return Err("expected an associated type name".into()),
-                        }
+                        // A component may carry an optional protocol qualifier before its identifier.
+                        let name = if let N::Nominal { .. } = &node {
+                            let proto = node;
+                            let ident = match self.pop()? {
+                                N::Ident(n) => n,
+                                _ => return Err("expected an associated type name".into()),
+                            };
+                            format!("{}.{}", path(&proto, 0), ident)
+                        } else {
+                            match node {
+                                N::Ident(n) => n,
+                                _ => return Err("expected an associated type name".into()),
+                            }
+                        };
+                        parts.push(name);
                     }
                     parts.reverse();
                     if parts.is_empty() {
@@ -1353,9 +1366,17 @@ impl<'a> D<'a> {
                 }
                 b'Y' => {
                     // `QY`: an associated type path (one or more names) rooted at a generic
-                    // parameter numbered like `Qy`, possibly at a nested depth.
-                    let (depth, i) = self.generic_param_index()?;
-                    self.note_param(i);
+                    // parameter numbered like `Qy`, possibly at a nested depth. `s` roots the
+                    // path at the constrained existential `Self` instead of parameter zero.
+                    let root = if self.pos < self.s.len() && self.s[self.pos] == b's' {
+                        self.pos += 1;
+                        self.note_param(0);
+                        N::ConstrainedExistentialSelf
+                    } else {
+                        let (depth, i) = self.generic_param_index()?;
+                        self.note_param(i);
+                        N::Param(depth, i)
+                    };
                     let mut parts = Vec::new();
                     let mut closed = false;
                     while !closed {
@@ -1364,16 +1385,27 @@ impl<'a> D<'a> {
                             closed = true;
                             node = self.pop()?;
                         }
-                        match node {
-                            N::Ident(n) => parts.push(n),
-                            _ => return Err("expected an associated type name".into()),
-                        }
+                        // A component may carry an optional protocol qualifier before its identifier.
+                        let name = if let N::Nominal { .. } = &node {
+                            let proto = node;
+                            let ident = match self.pop()? {
+                                N::Ident(n) => n,
+                                _ => return Err("expected an associated type name".into()),
+                            };
+                            format!("{}.{}", path(&proto, 0), ident)
+                        } else {
+                            match node {
+                                N::Ident(n) => n,
+                                _ => return Err("expected an associated type name".into()),
+                            }
+                        };
+                        parts.push(name);
                     }
                     parts.reverse();
                     if parts.is_empty() {
                         return Err("empty associated type path".into());
                     }
-                    let mut n = N::Param(depth, i);
+                    let mut n = root;
                     for name in parts {
                         n = N::Member { base: Box::new(n), name };
                     }
@@ -1382,9 +1414,20 @@ impl<'a> D<'a> {
                 }
                 b'x' => {
                     // `Qx`: an associated type named on a base type.
-                    let name = self.pop_name()?;
+                    let name0 = self.pop_name()?;
+                    // optional protocol qualifier below the name on the stack
+                    let (qual, name) = if matches!(self.stack.last(), Some(N::Nominal { kind: 'P', .. })) {
+                        let q = self.pop()?;
+                        (Some(q), name0)
+                    } else {
+                        (None, name0)
+                    };
                     let base = self.pop_type()?;
-                    let n = N::Member { base: Box::new(base), name };
+                    let full_name = match qual {
+                        Some(proto) => format!("{}.{}", path(&proto, 0), name),
+                        None => name,
+                    };
+                    let n = N::Member { base: Box::new(base), name: full_name };
                     self.add_sub(&n)?;
                     self.push(n)
                 }
@@ -1398,10 +1441,21 @@ impl<'a> D<'a> {
                             closed = true;
                             node = self.pop()?;
                         }
-                        match node {
-                            N::Ident(n) => parts.push(n),
-                            _ => return Err("expected an associated type name".into()),
-                        }
+                        // A component may carry an optional protocol qualifier before its identifier.
+                        let name = if let N::Nominal { .. } = &node {
+                            let proto = node;
+                            let ident = match self.pop()? {
+                                N::Ident(n) => n,
+                                _ => return Err("expected an associated type name".into()),
+                            };
+                            format!("{}.{}", path(&proto, 0), ident)
+                        } else {
+                            match node {
+                                N::Ident(n) => n,
+                                _ => return Err("expected an associated type name".into()),
+                            }
+                        };
+                        parts.push(name);
                     }
                     parts.reverse();
                     if parts.is_empty() {
@@ -1916,6 +1970,7 @@ fn render(n: &N, depth: usize) -> String {
             format!("{} & {}", render(class, d), rest.join(" & "))
         }
         N::DynamicSelf => "Self".into(),
+        N::ConstrainedExistentialSelf => "Self".into(),
         N::Attributed { text, inner, .. } => format!("{text}{}", render(inner, d)),
         N::Existential(ps) => {
             if ps.is_empty() {
