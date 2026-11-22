@@ -21,3 +21,9 @@ fn constrained_extension_needs_a_requirement() {
     let d = demangle("_$sSDsSHrlE");
     assert_eq!(d.status, Status::Invalid);
 }
+
+#[test]
+fn constrained_extension_rejects_second_r_operator() {
+    let d = demangle("_$sSDsSHR_rrlE");
+    assert_eq!(d.status, Status::Invalid);
+}

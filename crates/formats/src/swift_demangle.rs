@@ -1550,6 +1550,9 @@ impl<'a> D<'a> {
                 if !matches!(self.stack.last(), Some(N::Requirement(_))) {
                     return Err("constrained extension without a requirement".into());
                 }
+                if self.constrained_sig {
+                    return Err("duplicate constrained signature operator".into());
+                }
                 self.constrained_sig = true;
                 Ok(())
             }
@@ -1622,7 +1625,9 @@ fn weight(n: &N, depth: usize) -> usize {
     let d = depth + 1;
     let kids: usize = match n {
         N::Nominal { ctx, .. } => weight(ctx, d),
-        N::Extension { module, ty, .. } => weight(module, d).saturating_add(weight(ty, d)),
+        N::Extension { module, ty, constraints, .. } => {
+            constraints.iter().fold(weight(module, d).saturating_add(weight(ty, d)), |a, c| a.saturating_add(c.len()))
+        }
         N::Bound { base, args } => args.iter().fold(weight(base, d), |a, x| a.saturating_add(weight(x, d))),
         N::Tuple(t) => t.iter().fold(0usize, |a, (_, x)| a.saturating_add(weight(x, d))),
         N::Func { params, result, attrs } => {
