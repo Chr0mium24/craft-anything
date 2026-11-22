@@ -1338,7 +1338,7 @@ impl<'a> D<'a> {
                             node = self.pop()?;
                         }
                         // A component may carry an optional protocol qualifier before its identifier.
-                        let name = if let N::Nominal { .. } = &node {
+                        let name = if let N::Nominal { kind: 'P', .. } = &node {
                             let proto = node;
                             let ident = match self.pop()? {
                                 N::Ident(n) => n,
@@ -1386,7 +1386,7 @@ impl<'a> D<'a> {
                             node = self.pop()?;
                         }
                         // A component may carry an optional protocol qualifier before its identifier.
-                        let name = if let N::Nominal { .. } = &node {
+                        let name = if let N::Nominal { kind: 'P', .. } = &node {
                             let proto = node;
                             let ident = match self.pop()? {
                                 N::Ident(n) => n,
@@ -1414,13 +1414,14 @@ impl<'a> D<'a> {
                 }
                 b'x' => {
                     // `Qx`: an associated type named on a base type.
-                    let name0 = self.pop_name()?;
-                    // optional protocol qualifier below the name on the stack
+                    // optional protocol qualifier above the identifier on the stack
                     let (qual, name) = if matches!(self.stack.last(), Some(N::Nominal { kind: 'P', .. })) {
                         let q = self.pop()?;
-                        (Some(q), name0)
+                        let n = self.pop_name()?;
+                        (Some(q), n)
                     } else {
-                        (None, name0)
+                        let n = self.pop_name()?;
+                        (None, n)
                     };
                     let base = self.pop_type()?;
                     let full_name = match qual {
@@ -1442,7 +1443,7 @@ impl<'a> D<'a> {
                             node = self.pop()?;
                         }
                         // A component may carry an optional protocol qualifier before its identifier.
-                        let name = if let N::Nominal { .. } = &node {
+                        let name = if let N::Nominal { kind: 'P', .. } = &node {
                             let proto = node;
                             let ident = match self.pop()? {
                                 N::Ident(n) => n,

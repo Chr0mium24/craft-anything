@@ -28,4 +28,5 @@ fn malformed_associated_type_paths_are_invalid() {
     invalid("$s4main1SV1xQZ");
     invalid("$s4main1SV1x7ElementQYd");
     invalid("$s4main1SV1x7ElementQY__");
+    invalid("$s7ElementSi_QZ");
 }
