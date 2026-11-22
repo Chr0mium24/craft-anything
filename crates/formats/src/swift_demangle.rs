@@ -1171,6 +1171,80 @@ impl<'a> D<'a> {
                 self.add_sub(&n)?;
                 self.push(n)
             }
+            b'H' => {
+                let k = self.next()?;
+                match k {
+                    b'C' => {
+                        // concrete-protocol-conformance: ..., then any-protocol-conformance-list,
+                        // then the protocol-conformance-ref, then the type, then `HC`.
+                        let mut nodes: Vec<N> = Vec::new();
+                        loop {
+                            if let Some(N::EmptyList) = self.stack.last() {
+                                let _ = self.stack.pop();
+                                break;
+                            }
+                            if matches!(self.stack.last(), Some(N::FirstMarker)) {
+                                let _ = self.stack.pop();
+                                continue;
+                            }
+                            nodes.push(self.pop()?);
+                        }
+                        // protocol-conformance-ref: a protocol, optionally already carrying its module
+                        // (retroactive), or a protocol followed by an `HP`/`Hp` operator which leaves
+                        // the protocol in place.
+                        let proto = self.pop()?;
+                        let proto_node = match proto {
+                            n @ N::Nominal { kind: 'P', .. } => n,
+                            N::Ident(name) | N::Private(name) | N::Operator(name) => {
+                                let ctx = self.pop_context()?;
+                                N::Nominal { kind: 'P', ctx: Box::new(ctx), name }
+                            }
+                            _ => return Err("expected a protocol".into()),
+                        };
+                        // The module follows for a retroactive conformance.
+                        let module = match self.stack.last() {
+                            Some(N::Module(_) | N::Ident(_) | N::Nominal { .. } | N::Extension { .. }) => self.pop()?,
+                            _ => N::Module(String::new()),
+                        };
+                        // The conforming type is any whole type beneath.
+                        let ty = self.pop_type()?;
+                        let conf = N::Conformance { ty: Box::new(ty), proto: Box::new(proto_node), module: Box::new(module) };
+                        self.push(conf)
+                    }
+                    b'P' | b'p' => Ok(()),
+                    b'D' => {
+                        let i = self.index()?;
+                        let _ = i;
+                        Ok(())
+                    }
+                    b'I' => {
+                        let i = self.index()?;
+                        let _ = i;
+                        Ok(())
+                    }
+                    b'A' => {
+                        let i = self.index()?;
+                        let _ = i;
+                        Ok(())
+                    }
+                    b'O' => {
+                        let _ = self.pop_type()?;
+                        Ok(())
+                    }
+                    b'X' => {
+                        // pack protocol conformance: consume the inner conformance list.
+                        if self.pop_if(|n| matches!(n, N::EmptyList)).is_none() {
+                            return Err("expected a conformance list".into());
+                        }
+                        Ok(())
+                    }
+                    b'r' | b'n' | b'c' | b'F' => {
+                        // runtime-record metadata operators for protocol conformance leave it in place
+                        Ok(())
+                    }
+                    _ => Err(format!("unsupported operator 'H{}'", char::from(k))),
+                }
+            }
             b'K' => self.push(N::Throws),
             b'L' => match self.next()? {
                 b'L' => self.private_name(),
@@ -1585,6 +1659,15 @@ impl<'a> D<'a> {
                 self.push(N::Param(0, 0))
             }
             b'y' => self.push(N::EmptyList),
+            b'g' => {
+                let i = self.index()?;
+                if i >= 1 << 31 {
+                    return Err("retroactive index too large".into());
+                }
+                // The retroactive conformance wrapper consumes a protocol conformance and an index;
+                // the conformance itself is retained for any surrounding consumer.
+                Ok(())
+            }
             b'z' => {
                 let t = self.pop_type()?;
                 self.push(N::Inout(Box::new(t)))
@@ -1768,6 +1851,10 @@ fn render(n: &N, depth: usize) -> String {
         N::Ident(s) | N::Private(s) | N::Operator(s) | N::Module(s) | N::Builtin(s) => s.clone(),
         N::Nominal { .. } | N::Extension { .. } => path(n, d),
         N::Bound { base, args } => {
+            let mut args: Vec<N> = args.clone();
+            while matches!(args.last(), Some(N::Conformance { .. })) {
+                args.pop();
+            }
             let b = path(base, d);
             match (b.as_str(), args.as_slice()) {
                 ("Swift.Array", [t]) => format!("[{}]", render(t, d)),
