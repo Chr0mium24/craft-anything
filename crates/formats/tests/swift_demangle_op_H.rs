@@ -20,7 +20,15 @@ fn operator_h_decodes() {
 
 #[test]
 fn malformed_operator_h_is_invalid() {
-    let bad = ["_$s8PaperKit5ImageV7$bounds9Coherence10CRRegisterVySo6CGRectVAiE7CRValueAAyHCg_GvgX", "_$sSiHD0_", "_$sSiHn", "_$sSig_"];
+    let bad = [
+        "_$s8PaperKit5ImageV7$bounds9Coherence10CRRegisterVySo6CGRectVAiE7CRValueAAyHCg_GvgX",
+        "_$sSiHD0_",
+        "_$sSiHn",
+        "_$sSig_",
+        "_$sSaySiSiSHHPSi_HCg_G",
+        "_$sSaySiSiSHyHCg_G",
+        "_$sSHHPc",
+    ];
     for b in bad {
         let d = demangle(b);
         assert_eq!(d.status, Status::Invalid, "{b}: {:?}", d.reason);

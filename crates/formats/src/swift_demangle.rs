@@ -547,6 +547,7 @@ impl<'a> D<'a> {
             N::Ident(_)
             | N::Private(_)
             | N::Operator(_)
+            | N::HpRef
             | N::FirstMarker
             | N::Throws
             | N::Async
@@ -1189,10 +1190,18 @@ impl<'a> D<'a> {
                             }
                             if matches!(self.stack.last(), Some(N::FirstMarker)) {
                                 let _ = self.stack.pop();
-                                nodes.push(self.pop()?);
+                                let node = self.pop()?;
+                                if !matches!(node, N::Conformance { .. } | N::HpRef) {
+                                    return Err("expected a conformance".into());
+                                }
+                                nodes.push(node);
                                 break;
                             }
-                            nodes.push(self.pop()?);
+                            let node = self.pop()?;
+                            if !matches!(node, N::Conformance { .. } | N::HpRef) {
+                                return Err("expected a conformance".into());
+                            }
+                            nodes.push(node);
                         }
                         // The module comes first (on top) for a retroactive conformance.
                         let module = match self.stack.last() {
@@ -1201,7 +1210,7 @@ impl<'a> D<'a> {
                                 N::Module(String::new())
                             }
                             Some(N::Module(_) | N::Ident(_) | N::Extension { .. }) => self.pop()?,
-                            _ => N::Module(String::new()),
+                            _ => return Err("expected a module or marker".into()),
                         };
                         // protocol-conformance-ref: a protocol, optionally already carrying its module
                         // (retroactive), or a protocol followed by an `HP`/`Hp` operator which leaves
