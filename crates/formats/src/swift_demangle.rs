@@ -1313,6 +1313,9 @@ impl<'a> D<'a> {
                 if kind == b'S' {
                     let left = self.pop_type()?;
                     let right = self.pop_type()?;
+                    if matches!(left, N::Global { .. }) || matches!(right, N::Global { .. }) {
+                        return Err("expected a type".into());
+                    }
                     let text = format!("{} == {}", render(&left, 0), render(&right, 0));
                     return self.push(N::Requirement(text));
                 }
@@ -1349,6 +1352,10 @@ impl<'a> D<'a> {
                             while matches!(self.stack.last(), Some(N::Ident(_)) | Some(N::FirstMarker)) {
                                 if matches!(self.stack.last(), Some(N::FirstMarker)) {
                                     let _ = self.stack.pop();
+                                    if !matches!(self.stack.last(), Some(N::Ident(_))) {
+                                        return Err("associated type name for RT".into());
+                                    }
+                                    ms.push(self.pop_name()?);
                                 } else {
                                     ms.push(self.pop_name()?);
                                 }

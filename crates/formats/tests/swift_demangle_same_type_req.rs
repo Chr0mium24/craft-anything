@@ -22,4 +22,7 @@ fn same_type_requirements_print_with_double_equals() {
 fn malformed_same_type_requirements_are_invalid() {
     assert_eq!(demangle("_$s4main3fooxxXRzlF").status, Status::Invalid);
     assert_eq!(demangle("_$s4main3fooyyxSiRtzlF").status, Status::Invalid);
+    assert_eq!(demangle("_$s4main3fooyyxSiN7ElementQzRSlF").status, Status::Invalid);
+    assert_eq!(demangle("_$s4main3fooyyxSi_RTzlF").status, Status::Invalid);
+    assert_eq!(demangle("_$s4main3fooyyxSi_1YRTzlF").status, Status::Invalid);
 }
