@@ -905,7 +905,7 @@ impl<'a> D<'a> {
     /// A whole type as the operand of a witness accessor. A module, a name, a member or another
     /// global (a metadata or witness symbol) before it is not one.
     fn witness_type(&mut self) -> R<N> {
-        if matches!(self.stack.last(), Some(N::Global { .. } | N::Entity { .. } | N::Conformance { .. } | N::Extension { .. })) {
+        if matches!(self.stack.last(), Some(N::Global { .. } | N::Entity { .. } | N::Conformance { .. } | N::Extension { .. } | N::OpaqueDecl(_))) {
             return Err("witness operand is not a type".into());
         }
         self.pop_type()
@@ -1634,7 +1634,7 @@ fn weight(n: &N, depth: usize) -> usize {
         N::Generic { sig, ty } => weight(sig, d).saturating_add(weight(ty, d)),
         N::Entity { ctx, ty, .. } => weight(ctx, d).saturating_add(ty.as_ref().map_or(0, |t| weight(t, d))),
         N::Conformance { ty, proto, module } => weight(ty, d).saturating_add(weight(proto, d)).saturating_add(weight(module, d)),
-        N::Global { inner, .. } => weight(inner, d),
+        N::Global { inner, prefix, suffix } => weight(inner, d).saturating_add(prefix.len()).saturating_add(suffix.len()),
         _ => 0,
     };
     kids.saturating_add(1)
