@@ -1133,6 +1133,8 @@ impl<'a> D<'a> {
         let arg_text = args.iter().map(|n| render(n, 0)).collect::<Vec<_>>().join(", ");
         let prefix = format!("generic pre-specialization <{arg_text}> of");
         self.push(N::Global { prefix, inner: Box::new(entity), suffix: String::new() })
+    }
+
     /// `TL`: the protocol requirements base descriptor of a protocol, the descriptor the runtime
     /// uses to find the protocol's requirement witnesses. The operand is the protocol itself: its
     /// name (an identifier, an operator or a private name) and the context it is declared in (a
