@@ -2047,8 +2047,6 @@ fn path(n: &N, depth: usize) -> String {
                 format!("{}.{name}", path(ctx, depth + 1))
             }
         }
-        N::Extension { ty, .. } => path(ty, depth + 1),
-        N::Nominal { ctx, name, .. } => format!("{}.{name}", path(ctx, depth + 1)),
         // An extension is printed with its declaring module in parentheses before the extended
         // type, as in `(extension in Foundation):Swift.String.Encoding`.
         N::Extension { module, ty } => format!("(extension in {}):{}", path(module, depth + 1), path(ty, depth + 1)),
@@ -2266,12 +2264,6 @@ fn render(n: &N, depth: usize) -> String {
                 EKind::DeallocDeinit => format!("{c}{sep}__deallocating_deinit"),
                 EKind::IvarDestroyer => format!("{c}{sep}__ivar_destroyer"),
                 EKind::IvarInitializer => format!("{c}{sep}__ivar_initializer"),
-                EKind::AllocInit if matches!(ctx.as_ref(), N::Nominal { kind: 'C', .. }) => format!("{c}.__allocating_init{}", ty_text(ty)),
-                EKind::AllocInit | EKind::Init => format!("{c}.init{}", ty_text(ty)),
-                EKind::Deinit => format!("{c}.deinit"),
-                EKind::DeallocDeinit => format!("{c}.__deallocating_deinit"),
-                EKind::IvarDestroyer => format!("{c}.__ivar_destroyer"),
-                EKind::IvarInitializer => format!("{c}.__ivar_initializer"),
                 EKind::PropertyWrapperBackingInitializer => format!("property wrapper backing initializer of {c}"),
                 EKind::PropertyWrapperInitFromProjected => format!("property wrapper init from projected value of {c}"),
                 EKind::Var => {
