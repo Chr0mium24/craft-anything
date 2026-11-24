@@ -2010,6 +2010,7 @@ impl<'a> D<'a> {
                     return Err("expected a conformance".into());
                 }
                 Ok(())
+            }
             b'h' => {
                 let t = self.pop_type()?;
                 if matches!(t, N::Global { .. } | N::Entity { .. } | N::Conformance { .. } | N::Extension { .. }) {
