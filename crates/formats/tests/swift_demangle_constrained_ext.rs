@@ -8,12 +8,12 @@ fn dm(symbol: &str) -> String {
 
 #[test]
 fn constrained_extension_r_form_has_no_leading_parameters() {
-    assert_eq!(dm("_$sSDsSHR_rlE"), "Swift.Dictionary< where B: Swift.Hashable>");
+    assert_eq!(dm("_$sSDsSHR_rlE"), "(extension in Swift):Swift.Dictionary< where B: Swift.Hashable>");
 }
 
 #[test]
 fn unconstrained_extension_l_form_lists_introduced_parameters() {
-    assert_eq!(dm("_$sSDsSHR_lE"), "Swift.Dictionary<A where B: Swift.Hashable>");
+    assert_eq!(dm("_$sSDsSHR_lE"), "(extension in Swift):Swift.Dictionary<A where B: Swift.Hashable>");
 }
 
 #[test]
