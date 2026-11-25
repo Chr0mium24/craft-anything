@@ -50,4 +50,5 @@ fn malformed_pre_specialization_is_invalid() {
     invalid("_$s4main3fooyyF_Ts5");
     invalid("_$s4main3fooyyFSiTs5");
     invalid("_$s4main3fooyyFK_Ts5");
+    invalid("_$sKSi_Ts5");
 }

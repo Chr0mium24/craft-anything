@@ -1129,7 +1129,7 @@ impl<'a> D<'a> {
             return Err("generic pre-specialization without arguments".into());
         }
         args.reverse();
-        let entity = self.pop()?;
+        let entity = self.pop_type()?;
         let arg_text = args.iter().map(|n| render(n, 0)).collect::<Vec<_>>().join(", ");
         let prefix = format!("generic pre-specialization <{arg_text}> of");
         self.push(N::Global { prefix, inner: Box::new(entity), suffix: String::new() })
