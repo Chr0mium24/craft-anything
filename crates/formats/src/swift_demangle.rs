@@ -1877,6 +1877,10 @@ impl<'a> D<'a> {
                 if self.constrained_sig {
                     return Err("duplicate constrained signature operator".into());
                 }
+                // Only the `rl` form, with no parameter counts between, is supported.
+                if self.peek() != Some(b'l') {
+                    return Err("constrained signature without its terminator".into());
+                }
                 self.constrained_sig = true;
                 Ok(())
             }

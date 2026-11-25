@@ -27,3 +27,9 @@ fn constrained_extension_rejects_second_r_operator() {
     let d = demangle("_$sSDsSHR_rrlE");
     assert_eq!(d.status, Status::Invalid);
 }
+
+#[test]
+fn constrained_signature_needs_its_terminator() {
+    let d = demangle("_$sSHRzr");
+    assert_eq!(d.status, Status::Invalid);
+}
