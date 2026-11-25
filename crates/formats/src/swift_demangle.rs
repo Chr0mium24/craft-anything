@@ -1486,17 +1486,10 @@ impl<'a> D<'a> {
                         let _ = i;
                         Err("unsupported dependent conformance".into())
                     }
-                    b'O' => {
-                        let _ = self.pop_type()?;
-                        Ok(())
-                    }
-                    b'X' => {
-                        // pack protocol conformance: consume the inner conformance list.
-                        if self.pop_if(|n| matches!(n, N::EmptyList)).is_none() {
-                            return Err("expected a conformance list".into());
-                        }
-                        Ok(())
-                    }
+                    // An opaque-type conformance takes a dependent conformance, and a pack
+                    // conformance builds a node the renderer has no form for yet.
+                    b'O' => Err("unsupported dependent conformance".into()),
+                    b'X' => Err("unsupported pack conformance".into()),
                     b'r' | b'n' | b'c' | b'F' => {
                         // runtime-record metadata operators are not rendered yet
                         Err("unsupported runtime record".into())

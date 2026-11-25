@@ -28,6 +28,8 @@ fn malformed_operator_h_is_invalid() {
         "_$sSaySiSiSHHPSi_HCg_G",
         "_$sSaySiSiSHyHCg_G",
         "_$sSHHPc",
+        "_$sSiSiHO",
+        "_$sSaySiyHXG",
     ];
     for b in bad {
         let d = demangle(b);
