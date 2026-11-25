@@ -30,3 +30,11 @@ fn malformed_associated_type_paths_are_invalid() {
     invalid("$s4main1SV1x7ElementQY__");
     invalid("$s7ElementSi_QZ");
 }
+
+#[test]
+fn associated_type_base_must_be_a_type() {
+    assert_eq!(dm("$sx7ElementSTQx"), "A.Swift.Sequence.Element");
+    assert_eq!(dm("$sST7ElementQx"), "Swift.Sequence.Element");
+    invalid("$sSiN7ElementSTQx");
+    invalid("$sSiN7ElementQx");
+}

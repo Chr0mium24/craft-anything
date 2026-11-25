@@ -1665,7 +1665,7 @@ impl<'a> D<'a> {
                         let n = self.pop_name()?;
                         (None, n)
                     };
-                    let base = self.pop_type()?;
+                    let base = self.witness_type()?;
                     let full_name = match qual {
                         Some(proto) => format!("{}.{}", path(&proto, 0), name),
                         None => name,
@@ -1704,7 +1704,7 @@ impl<'a> D<'a> {
                     if parts.is_empty() {
                         return Err("empty associated type path".into());
                     }
-                    let base = self.pop_type()?;
+                    let base = self.witness_type()?;
                     let mut n = base;
                     for name in parts {
                         n = N::Member { base: Box::new(n), name };
@@ -2149,7 +2149,8 @@ fn weight(n: &N, depth: usize) -> usize {
         N::OpaqueRef { decl, .. } => weight(decl, d),
         N::Attributed { inner, .. } => weight(inner, d),
         N::ClassBound { class, protos } => protos.iter().fold(weight(class, d), |a, x| a.saturating_add(weight(x, d))),
-        N::Member { base, .. } => weight(base, d),
+        // A qualified name carries rendered protocol text, which substitutions copy.
+        N::Member { base, name } => weight(base, d).saturating_add(name.len()),
         N::Existential(v) => v.iter().fold(0usize, |a, x| a.saturating_add(weight(x, d))),
         N::Generic { sig, ty } => weight(sig, d).saturating_add(weight(ty, d)),
         N::Entity { ctx, ty, .. } => weight(ctx, d).saturating_add(ty.as_ref().map_or(0, |t| weight(t, d))),
