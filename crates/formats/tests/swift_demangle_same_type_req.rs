@@ -26,3 +26,13 @@ fn malformed_same_type_requirements_are_invalid() {
     assert_eq!(demangle("_$s4main3fooyyxSi_RTzlF").status, Status::Invalid);
     assert_eq!(demangle("_$s4main3fooyyxSi_1YRTzlF").status, Status::Invalid);
 }
+
+#[test]
+fn protocol_qualified_associated_type_name_decodes() {
+    assert_eq!(dm("_$s4main3fooyyxSi7ElementSTRtzlF"), "main.foo<A where A.Swift.Sequence.Element == Swift.Int>(A) -> ()");
+}
+
+#[test]
+fn substitution_keeps_the_parameter_depth() {
+    assert_eq!(dm("_$s4main3fooyyxSi1XRtd__AD1YRtzlF"), "main.foo<A where A1.X == Swift.Int, A.Y == A1.X>(A) -> ()");
+}
