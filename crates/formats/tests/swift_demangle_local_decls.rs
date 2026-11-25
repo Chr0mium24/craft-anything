@@ -43,3 +43,19 @@ fn invalid_local_decls() {
         }
     }
 }
+
+/// An entity written after `of` or `in` keeps its local owner there whole.
+#[test]
+fn local_owner_after_of_or_in() {
+    assert_eq!(dm("$s4main1fL_yyFfA_"), "default argument 0 of f #1 () -> () in main");
+    assert_eq!(dm("$s4main1fL_yyFyycfU_"), "closure #1 () -> () in f #1 () -> () in main");
+}
+
+/// Inside a local type, the nested path comes first and the local type follows ` in `.
+#[test]
+fn nested_in_local_type() {
+    assert_eq!(dm("$s4main5outeryyF1SL_V1TVMa"), "type metadata accessor for T in S #1 in main.outer() -> ()");
+    assert_eq!(dm("$s4main5outeryyF1SL_V1TV1UVMa"), "type metadata accessor for T.U in S #1 in main.outer() -> ()");
+    assert_eq!(dm("$s4main5outeryyF1SL_V1TV1fyyF"), "T.f() -> () in S #1 in main.outer() -> ()");
+    assert_eq!(dm("$s4main5outeryyF1SL_V1fyyF"), "f() -> () in S #1 in main.outer() -> ()");
+}

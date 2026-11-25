@@ -2043,6 +2043,8 @@ fn path(n: &N, depth: usize) -> String {
         N::Nominal { ctx, name, .. } => {
             if name.contains('\u{0}') {
                 format!("{} in {}", name.replace('\u{0}', " "), path(ctx, depth + 1))
+            } else if let Some((Some(inner), local)) = split_local(n, depth) {
+                format!("{inner} in {local}")
             } else {
                 format!("{}.{name}", path(ctx, depth + 1))
             }
@@ -2052,6 +2054,26 @@ fn path(n: &N, depth: usize) -> String {
         N::Extension { module, ty } => format!("(extension in {}):{}", path(module, depth + 1), path(ty, depth + 1)),
         other => render(other, depth + 1),
     }
+}
+
+/// Splits a context that lies inside a local declaration into the part written before ` in ` and
+/// the local declaration written after it, as in `T.U in S #1 in main.outer() -> ()`. The local
+/// declaration itself has nothing before it. `None` when no local declaration is in the chain.
+fn split_local(n: &N, depth: usize) -> Option<(Option<String>, String)> {
+    if depth > MAX_RENDER_DEPTH {
+        return None;
+    }
+    let local = match n {
+        N::Nominal { name, .. } | N::Ident(name) | N::Private(name) | N::Operator(name) => name.contains('\u{0}'),
+        N::Entity { name, .. } => name.as_deref().unwrap_or_default().contains('\u{0}'),
+        _ => false,
+    };
+    if local {
+        return Some((None, path(n, depth + 1)));
+    }
+    let N::Nominal { ctx, name, .. } = n else { return None };
+    let (inner, local) = split_local(ctx, depth + 1)?;
+    Some((Some(inner.map_or_else(|| name.clone(), |i| format!("{i}.{name}"))), local))
 }
 
 /// The argument list of a function type, with `labels`, an entity's argument labels, one per
@@ -2237,21 +2259,21 @@ fn render(n: &N, depth: usize) -> String {
             // followed by `#N`. Render them as `prefix name #N … in containing`,
             // where the containing (type or module) moves after `in `. Repeated
             // discriminators (`L_` operands) are all decoded, so no NUL leaks.
-            let ctx_is_local = match ctx.as_ref() {
-                N::Nominal { name, .. } => name.contains('\u{0}'),
-                N::Ident(s) | N::Private(s) | N::Operator(s) => s.contains('\u{0}'),
-                N::Entity { name, .. } => name.as_deref().unwrap_or_default().contains('\u{0}'),
-                _ => false,
-            };
-            let (name_str, c, local_containing) = if raw_name.contains('\u{0}') {
+            // Kinds that write their context after `of` or `in` keep it whole there.
+            let ctx_follows = matches!(
+                kind,
+                EKind::Closure(..) | EKind::DefaultArg(_) | EKind::VarInit | EKind::PropertyWrapperBackingInitializer | EKind::PropertyWrapperInitFromProjected
+            );
+            let discriminated = raw_name.contains('\u{0}');
+            let (name_str, c, local_containing) = if discriminated {
                 (raw_name.replace('\u{0}', " "), String::new(), Some(c0.clone()))
-            } else if ctx_is_local {
-                (raw_name, String::new(), Some(c0.clone()))
+            } else if let Some((inner, local)) = split_local(ctx, d).filter(|_| !ctx_follows) {
+                (raw_name, inner.unwrap_or_default(), Some(local))
             } else {
                 (raw_name, c0.clone(), None)
             };
             let sep = if c.is_empty() { "" } else { "." };
-            let sp = if local_containing.is_some() { " " } else { "" };
+            let sp = if discriminated { " " } else { "" };
             let st = if *is_static { "static " } else { "" };
             let ty_text = |t: &Option<Box<N>>| t.as_ref().map(|t| func_text(t, labels, d)).unwrap_or_default();
             let body = match kind {
