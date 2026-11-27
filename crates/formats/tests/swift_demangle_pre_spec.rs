@@ -52,3 +52,14 @@ fn malformed_pre_specialization_is_invalid() {
     invalid("_$s4main3fooyyFK_Ts5");
     invalid("_$sKSi_Ts5");
 }
+
+/// Each `A64` repeat copies the pre-specialization before it 64 times, so every further stage
+/// multiplies the rendered text. The text counts against the expansion budget: a short chain still
+/// decodes and a long one is rejected instead of building gigabytes of output.
+#[test]
+fn repeated_pre_specializations_are_bounded() {
+    let two = dm("_$sSiSi_Ts0fi1xVA64B_Ts0");
+    assert_eq!(two.matches("generic pre-specialization <Swift.Int> of Swift.Int").count(), 65);
+    let five = demangle("_$sSiSi_Ts0fi1xVA64B_Ts0fi1xVA64D_Ts0fi1xVA64F_Ts0fi1xVA64H_Ts0fi1xVA64J_Ts0");
+    assert_eq!(five.status, Status::Invalid, "{} bytes", five.demangled.unwrap_or_default().len());
+}

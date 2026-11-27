@@ -1130,8 +1130,16 @@ impl<'a> D<'a> {
         }
         args.reverse();
         let entity = self.pop_type()?;
-        let arg_text = args.iter().map(|n| render(n, 0)).collect::<Vec<_>>().join(", ");
-        let prefix = format!("generic pre-specialization <{arg_text}> of");
+        // A node's weight leaves out the text a `Global` carries in its prefix, so a repeated
+        // substitution copies an earlier pre-specialization for almost nothing. Charge the text
+        // each argument renders to before joining it, or every stage multiplies the output.
+        let mut texts = Vec::with_capacity(args.len());
+        for n in &args {
+            let text = render(n, 0);
+            self.budget = self.budget.checked_sub(text.len()).ok_or("symbol expands too much")?;
+            texts.push(text);
+        }
+        let prefix = format!("generic pre-specialization <{}> of", texts.join(", "));
         self.push(N::Global { prefix, inner: Box::new(entity), suffix: String::new() })
     }
 
