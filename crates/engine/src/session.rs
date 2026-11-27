@@ -17,6 +17,18 @@ pub struct Annotations {
     pub bookmarks: BTreeMap<u64, String>,
 }
 
+impl Annotations {
+    /// Overlay unsaved in-memory annotations onto stored annotations loaded from a project,
+    /// preserving stored entries for untouched addresses while keeping unsaved edits.
+    fn merge_unsaved(&mut self, unsaved: Annotations) {
+        let Annotations { names, comments, inline_comments, bookmarks } = unsaved;
+        self.names.extend(names);
+        self.comments.extend(comments);
+        self.inline_comments.extend(inline_comments);
+        self.bookmarks.extend(bookmarks);
+    }
+}
+
 /// Where the user (or agent) is looking in a target.
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Cursor {
@@ -80,6 +92,10 @@ pub struct Session {
     /// Project records left on disk because the project holds more than [`MAX_LOADED_EVIDENCE`].
     /// They still resolve by id through [`Session::resolve_evidence`].
     unloaded_evidence: usize,
+    /// Raw-file digests for the last refresh's verified, budgeted records. They refer to the
+    /// corresponding ledger values, so replacing one locally invalidates its digest.
+    project_evidence_digests: HashMap<String, String>,
+    project_evidence_root: Option<std::path::PathBuf>,
     /// Session-wide caches not tied to a target (device lists, browser connections…).
     pub ext: Extensions,
     /// Where this session keeps config.toml and plugin caches, when not the usual folder
@@ -287,6 +303,9 @@ impl Session {
         if let Some(project) = &self.project {
             project.store_evidence(&ev)?;
         }
+        // An existing content-addressed file is not overwritten by store_evidence. The new
+        // in-memory record may have different display fields and is not that disk snapshot.
+        self.project_evidence_digests.remove(&ev.id);
         if !self.ledger.contains_key(&ev.id) {
             self.order.push(ev.id.clone());
         }
@@ -330,6 +349,8 @@ impl Session {
         self.order.clear();
         self.unknowns.clear();
         self.unloaded_evidence = 0;
+        self.project_evidence_digests.clear();
+        self.project_evidence_root = None;
     }
 
     // ---- unknowns ----
@@ -359,13 +380,19 @@ impl Session {
     /// Opening a different project while one is already open replaces the session's ledger and
     /// open questions with the new project's and closes the previous project's open targets, so a
     /// report can't name them and an annotation can't be saved into the new project's store.
+    /// Opening the first project loads each already-open target's stored annotations from that
+    /// project and merges any unsaved edits made before the project opened, so a later save does
+    /// not overwrite the project's stored annotations.
     /// Opening the same project again refreshes its stored records and keeps its targets in
     /// place. The newest stored records (by write time) are loaded into the ledger, up
     /// to [`MAX_LOADED_EVIDENCE`] records and a byte budget; the rest stay on disk and resolve by
-    /// id. Every loaded record passes its integrity check; tampered or unreadable ones are skipped.
+    /// id. New or changed records pass their integrity check; tampered or unreadable ones are
+    /// skipped. Unchanged records reuse the verified ledger value after checking a digest of the
+    /// entire file, including display fields. Refresh still scans and reads the stored files.
     pub fn open_project(&mut self, project: Project) -> Result<(), ToolError> {
         // Read the new project's questions first: a failed read leaves the current project as it was.
         let unknowns = project.load_unknowns()?;
+        let first_open = self.project.is_none();
         let switched = self.project.as_ref().is_some_and(|open| crate::workspace::normalized(&open.root) != crate::workspace::normalized(&project.root));
         if switched {
             self.clear_ledger();
@@ -373,6 +400,22 @@ impl Session {
             // save_annotations would write their annotations into this project's store.
             self.targets.clear();
             self.active = None;
+        } else if first_open {
+            for open_target in self.targets.values_mut() {
+                match project.load_annotations(&open_target.target.sha256) {
+                    Ok(mut stored) => {
+                        let unsaved = std::mem::take(&mut open_target.annotations);
+                        stored.merge_unsaved(unsaved);
+                        open_target.annotations = stored;
+                    }
+                    Err(e) if e.code == ErrorCode::NotFound => {}
+                    Err(e) => log::warn!("skipping stored annotations for {}: {}", open_target.target.id, e.message),
+                }
+            }
+        }
+        let root = crate::workspace::normalized(&project.root);
+        if self.project_evidence_root.as_ref() != Some(&root) {
+            self.project_evidence_digests.clear();
         }
         // Recomputed below; an old count from a larger open must not survive this one.
         self.unloaded_evidence = 0;
@@ -383,16 +426,25 @@ impl Session {
         // Newest first, so the budget keeps the most recent work.
         stored.sort_by(|a, b| b.modified.cmp(&a.modified).then_with(|| a.id.cmp(&b.id)));
         let mut loaded = Vec::new();
+        let mut loaded_count = 0usize;
+        let mut digests = HashMap::new();
         let mut bytes = 0u64;
         for (i, f) in stored.iter().enumerate() {
-            if loaded.len() >= MAX_LOADED_EVIDENCE || bytes.saturating_add(f.bytes) > MAX_LOADED_EVIDENCE_BYTES {
+            if loaded_count >= MAX_LOADED_EVIDENCE || bytes.saturating_add(f.bytes) > MAX_LOADED_EVIDENCE_BYTES {
                 self.unloaded_evidence = stored.len().saturating_sub(i);
                 break;
             }
-            match project.load_evidence(&f.id) {
-                Ok(ev) => {
+            let previous = self.project_evidence_digests.get(&f.id).filter(|_| self.ledger.contains_key(&f.id)).map(String::as_str);
+            match project.refresh_evidence(&f.id, previous) {
+                Ok((evidence, digest)) => {
+                    // Reusing an allocation does not make the record free: it consumes the same
+                    // count and byte budgets as a fresh load, and only selected digests survive.
+                    loaded_count += 1;
                     bytes = bytes.saturating_add(f.bytes);
-                    loaded.push(ev);
+                    digests.insert(f.id.clone(), digest);
+                    if let Some(ev) = evidence {
+                        loaded.push(ev);
+                    }
                 }
                 Err(e) => log::warn!("skipping project evidence {}: {}", f.id, e.message),
             }
@@ -404,9 +456,10 @@ impl Session {
             }
             self.ledger.insert(ev.id.clone(), ev);
         }
+        self.project_evidence_digests = digests;
+        self.project_evidence_root = Some(root);
         self.project = Some(project);
-        let investigation = crate::tools::investigation_tools::load(self);
-        crate::tools::investigation_tools::cache(self, investigation);
+        crate::tools::investigation_tools::refresh(self);
         Ok(())
     }
 }
@@ -529,5 +582,106 @@ mod tests {
         std::fs::remove_dir_all(c.root.join("unknowns")).unwrap();
         session.open_project(c).unwrap();
         assert_eq!(session.unknowns().count(), 0);
+    }
+
+    /// Guards that opening the first project loads stored annotations for targets already open
+    /// before the project, so a later edit and save preserves existing project annotations.
+    #[test]
+    fn opening_the_first_project_loads_stored_annotations_for_open_targets() {
+        let dir = crate::testing::temp_dir();
+        let project = Project::create(&dir.join("p.cany"), "P", Purpose::Education).unwrap();
+        let target = Target::from_bytes(dir.join("tool.bin"), "tool.bin".into(), b"\x7fELF\x02\x01".to_vec());
+
+        let mut stored = Annotations::default();
+        stored.names.insert(0x1000, "init_window".into());
+        stored.comments.insert(0x1000, "stored comment".into());
+        stored.inline_comments.insert(0x1004, "stored inline".into());
+        stored.bookmarks.insert(0x1008, "stored bookmark".into());
+        project.save_annotations(&target.sha256, &stored).unwrap();
+
+        let mut session = crate::testing::session();
+        session.add_target(target.clone());
+        assert!(session.active().unwrap().annotations.names.is_empty(), "before opening a project, annotations start empty");
+
+        session.open_project(project.clone()).unwrap();
+        let loaded = &session.active().unwrap().annotations;
+        assert_eq!(loaded.names.get(&0x1000).map(String::as_str), Some("init_window"));
+        assert_eq!(loaded.comments.get(&0x1000).map(String::as_str), Some("stored comment"));
+        assert_eq!(loaded.inline_comments.get(&0x1004).map(String::as_str), Some("stored inline"));
+        assert_eq!(loaded.bookmarks.get(&0x1008).map(String::as_str), Some("stored bookmark"));
+
+        session.active_mut().unwrap().annotations.comments.insert(0x2000, "added after open".into());
+        session.save_annotations().unwrap();
+        let persisted = project.load_annotations(&target.sha256).unwrap();
+        assert_eq!(persisted.comments.get(&0x1000).map(String::as_str), Some("stored comment"));
+        assert_eq!(persisted.comments.get(&0x2000).map(String::as_str), Some("added after open"));
+        assert_eq!(persisted.names.get(&0x1000).map(String::as_str), Some("init_window"));
+        assert_eq!(persisted.inline_comments.get(&0x1004).map(String::as_str), Some("stored inline"));
+        assert_eq!(persisted.bookmarks.get(&0x1008).map(String::as_str), Some("stored bookmark"));
+    }
+
+    /// Guards that unsaved annotations made before opening the first project merge onto the
+    /// project's stored annotations without losing either side, and that reopening the same
+    /// project does not overwrite unsaved in-memory edits.
+    #[test]
+    fn opening_the_first_project_merges_unsaved_annotations_and_tolerates_corrupt_files() {
+        let dir = crate::testing::temp_dir();
+        let project = Project::create(&dir.join("merge.cany"), "Merge", Purpose::Education).unwrap();
+        let target = Target::from_bytes(dir.join("a.bin"), "a.bin".into(), b"\x7fELF\x02\x01".to_vec());
+        let corrupt_target = Target::from_bytes(dir.join("b.bin"), "b.bin".into(), b"\x7fELF\x02\x02".to_vec());
+
+        let mut stored = Annotations::default();
+        stored.names.insert(0x1000, "from_project".into());
+        stored.names.insert(0x1004, "overridden_by_unsaved".into());
+        stored.comments.insert(0x1000, "project comment".into());
+        stored.comments.insert(0x1004, "old comment".into());
+        stored.inline_comments.insert(0x1000, "project inline".into());
+        stored.inline_comments.insert(0x1004, "old inline".into());
+        stored.bookmarks.insert(0x1000, "project bookmark".into());
+        stored.bookmarks.insert(0x1004, "old bookmark".into());
+        project.save_annotations(&target.sha256, &stored).unwrap();
+
+        // Corrupt the second target's annotation file on disk; open_project must still succeed.
+        std::fs::write(project.root.join("annotations").join(format!("{}.json", corrupt_target.sha256)), b"{not json").unwrap();
+
+        let mut session = crate::testing::session();
+        let id_a = session.add_target(target.clone());
+        let id_b = session.add_target(corrupt_target.clone());
+        {
+            let a = &mut session.target_mut(&id_a).unwrap().annotations;
+            a.names.insert(0x1004, "fresh_local_name".into());
+            a.names.insert(0x2000, "unsaved_name".into());
+            a.comments.insert(0x1004, "fresh local comment".into());
+            a.comments.insert(0x2000, "unsaved comment".into());
+            a.inline_comments.insert(0x1004, "fresh local inline".into());
+            a.inline_comments.insert(0x2000, "unsaved inline".into());
+            a.bookmarks.insert(0x1004, "fresh local bookmark".into());
+            a.bookmarks.insert(0x2000, "unsaved bookmark".into());
+        }
+        session.target_mut(&id_b).unwrap().annotations.comments.insert(0x3000, "kept on corrupt".into());
+
+        session.open_project(project.clone()).unwrap();
+
+        let merged = &session.target(&id_a).unwrap().annotations;
+        assert_eq!(merged.names.get(&0x1000).map(String::as_str), Some("from_project"));
+        assert_eq!(merged.names.get(&0x1004).map(String::as_str), Some("fresh_local_name"));
+        assert_eq!(merged.names.get(&0x2000).map(String::as_str), Some("unsaved_name"));
+        assert_eq!(merged.comments.get(&0x1000).map(String::as_str), Some("project comment"));
+        assert_eq!(merged.comments.get(&0x1004).map(String::as_str), Some("fresh local comment"));
+        assert_eq!(merged.comments.get(&0x2000).map(String::as_str), Some("unsaved comment"));
+        assert_eq!(merged.inline_comments.get(&0x1000).map(String::as_str), Some("project inline"));
+        assert_eq!(merged.inline_comments.get(&0x1004).map(String::as_str), Some("fresh local inline"));
+        assert_eq!(merged.inline_comments.get(&0x2000).map(String::as_str), Some("unsaved inline"));
+        assert_eq!(merged.bookmarks.get(&0x1000).map(String::as_str), Some("project bookmark"));
+        assert_eq!(merged.bookmarks.get(&0x1004).map(String::as_str), Some("fresh local bookmark"));
+        assert_eq!(merged.bookmarks.get(&0x2000).map(String::as_str), Some("unsaved bookmark"));
+        assert_eq!(session.target(&id_b).unwrap().annotations.comments.get(&0x3000).map(String::as_str), Some("kept on corrupt"));
+
+        // Reopening the same project must keep unsaved in-memory edits (including removals) instead of reloading from disk.
+        session.target_mut(&id_a).unwrap().annotations.names.insert(0x1004, "edited_in_memory".into());
+        session.target_mut(&id_a).unwrap().annotations.names.remove(&0x1000);
+        session.open_project(project).unwrap();
+        assert_eq!(session.target(&id_a).unwrap().annotations.names.get(&0x1004).map(String::as_str), Some("edited_in_memory"));
+        assert!(!session.target(&id_a).unwrap().annotations.names.contains_key(&0x1000));
     }
 }

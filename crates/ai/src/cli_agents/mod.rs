@@ -1108,6 +1108,9 @@ fn agent_env(builder: bool, effort: Option<crate::model::Effort>) -> Vec<(&'stat
         ("CLAUDE_CODE_MCP_AUTO_BACKGROUND_MS", if builder { "0" } else { "120000" }.into()),
         ("BASH_DEFAULT_TIMEOUT_MS", ms(shell / 2)),
         ("BASH_MAX_TIMEOUT_MS", ms(shell)),
+        // After its last turn `claude -p` waits for the background subagents it started, but stops
+        // them after 10 quiet minutes by default (#2428); a builder's may work for hours.
+        ("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", ms(shell)),
         // High effort for Claude Code unless chosen. An environment variable rather than
         // `--effort`: it ranks highest, and an older Claude Code that doesn't know it ignores it.
         ("CLAUDE_CODE_EFFORT_LEVEL", crate::prompt::choose_effort(effort).as_str().into()),
@@ -2494,6 +2497,9 @@ mod tests {
             assert!(tools.split(',').any(|tool| tool == "Write"), "{access:?}: {tools}");
             // #1105: a Deep builder can start subagents; Clean room keeps them out.
             assert_eq!(tools.split(',').any(|tool| tool == "Agent"), access == Access::Build, "{access:?}: {tools}");
+            // #2428: and is told how to wait for them, which a builder without them isn't.
+            let prompt = &builder[builder.iter().position(|x| x == "--append-system-prompt").unwrap() + 1];
+            assert_eq!(prompt.starts_with("PRE") && prompt.contains("notification"), access == Access::Build, "{access:?}: {prompt}");
         }
         assert_eq!(a[pos("--resume") + 1], "sess-1");
         assert_eq!(a[pos("--allowedTools") + 1], "mcp__craft-anything__*");
@@ -2952,7 +2958,7 @@ mod tests {
             json!({"type":"system","subtype":"init","session_id":"s1"}).to_string(),
             json!({"type":"assistant","message":{"content":[{"type":"text","text":"Looking"},{"type":"tool_use","id":"t1","name":"mcp__craft-anything__core_session_show","input":{}}]}}).to_string(),
             json!({"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":[{"type":"text","text":format!("{{\"evidence_id\":\"{ev}\"}}")}]}]}}).to_string(),
-            json!({"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.12,"usage":{"input_tokens":5,"cache_read_input_tokens":5,"output_tokens":7}}).to_string(),
+            json!({"type":"result","subtype":"success","is_error":false,"total_cost_usd":0.12,"usage":{"input_tokens":5,"cache_read_input_tokens":5,"cache_creation_input_tokens":3,"output_tokens":7}}).to_string(),
             "not json warning".to_string(),
         ];
         let mut p = StreamParser::new(adapter_for("claude-code"));
@@ -2962,7 +2968,8 @@ mod tests {
         assert!(matches!(&events[1], AgentEvent::ToolStarted { tool, .. } if tool == "core_session_show"));
         assert!(matches!(&events[2], AgentEvent::ToolFinished { tool, ok: true, evidence_id: Some(id), .. } if tool == "core_session_show" && *id == ev));
         assert!(matches!(&events[3], AgentEvent::Status { .. }));
-        assert_eq!((p.input_tokens, p.output_tokens, p.cost_usd), (10, 7, Some(0.12)));
+        // Every prompt token counts as input: uncached, read from the cache and written to it.
+        assert_eq!((p.input_tokens, p.output_tokens, p.cost_usd), (13, 7, Some(0.12)));
     }
 
     /// #446: a project copied from another computer names a session this one doesn't have. The
