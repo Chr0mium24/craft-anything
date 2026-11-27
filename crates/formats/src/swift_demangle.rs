@@ -2309,7 +2309,6 @@ fn render(n: &N, depth: usize) -> String {
             s
         }
         N::Entity { kind, ctx, name, labels, ty, accessor, is_static } => {
-            let c0 = path(ctx, d);
             let raw_name = name.clone().unwrap_or_default();
             // Locally-discriminated declarations (`L…`) mangle with a hidden
             // marker inserted by the decoder: the name carries one or more `\0`
@@ -2322,12 +2321,16 @@ fn render(n: &N, depth: usize) -> String {
                 EKind::Closure(..) | EKind::DefaultArg(_) | EKind::VarInit | EKind::PropertyWrapperBackingInitializer | EKind::PropertyWrapperInitFromProjected
             );
             let discriminated = raw_name.contains('\u{0}');
+            // Each branch renders the context once. Rendering it a second time at every level
+            // doubles the work for each local declaration nested in another.
             let (name_str, c, local_containing) = if discriminated {
-                (raw_name.replace('\u{0}', " "), String::new(), Some(c0.clone()))
-            } else if let Some((inner, local)) = split_local(ctx, d).filter(|_| !ctx_follows) {
+                (raw_name.replace('\u{0}', " "), String::new(), Some(path(ctx, d)))
+            } else if ctx_follows {
+                (raw_name, path(ctx, d), None)
+            } else if let Some((inner, local)) = split_local(ctx, d) {
                 (raw_name, inner.unwrap_or_default(), Some(local))
             } else {
-                (raw_name, c0.clone(), None)
+                (raw_name, path(ctx, d), None)
             };
             let sep = if c.is_empty() { "" } else { "." };
             let sp = if discriminated { " " } else { "" };

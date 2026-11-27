@@ -59,3 +59,12 @@ fn nested_in_local_type() {
     assert_eq!(dm("$s4main5outeryyF1SL_V1TV1fyyF"), "T.f() -> () in S #1 in main.outer() -> ()");
     assert_eq!(dm("$s4main5outeryyF1SL_V1fyyF"), "f() -> () in S #1 in main.outer() -> ()");
 }
+
+/// Local declarations nested in one another render each containing context once. Rendering it
+/// twice at every level doubled the work, so this symbol took minutes.
+#[test]
+fn nested_local_declarations_render_each_context_once() {
+    let out = dm(&format!("$s4main{}", "1fL_yyF1gyyF".repeat(30)));
+    assert_eq!(out.matches("f #1 () -> ()").count(), 30);
+    assert!(out.ends_with(" in main"), "{out}");
+}
